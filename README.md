@@ -1,34 +1,96 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ReviewFlow
 
-## Getting Started
+A web platform for managing document review: users submit written work, an admin
+assigns it to a reviewer, the reviewer returns structured feedback and an
+annotated file, and the admin approves it before the user ever sees it.
 
-First, run the development server:
+**Reviewers are anonymous to users** — by design, everywhere, including inside
+downloaded files.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## The pipeline
+
+```
+User submits ──▶ [GATE 1: admin assigns reviewer] ──▶ Reviewer reviews & uploads
+                                                              │
+User views/downloads ◀── [GATE 2: admin approves] ◀───────────┘
+                                      │
+                                      └──▶ Revision Requested ──▶ back to reviewer
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Layer    | Development                                | Production    |
+| -------- | ------------------------------------------ | ------------- |
+| App      | Next.js 16 (App Router), TypeScript        | same, Vercel  |
+| UI       | Tailwind 4 + shadcn/ui                     | same          |
+| Database | Postgres 17 (Docker)                       | Neon          |
+| Storage  | MinIO (S3 API)                             | Cloudflare R2 |
+| Email    | Mailpit (catches everything)               | Resend        |
+| Auth     | Own sessions (argon2id + httpOnly cookies) | same          |
 
-## Learn More
+Storage and email sit behind interfaces (`lib/storage`, `lib/email`), so the only
+difference between the two columns is environment variables.
 
-To learn more about Next.js, take a look at the following resources:
+## Getting started
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Requires Node 20+, pnpm, and Docker Desktop.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+pnpm install
+cp .env.example .env.local     # defaults already target the Docker stack
+pnpm docker:up                 # Postgres + MinIO + Mailpit
+pnpm db:reset                  # migrate + seed
+pnpm dev
+```
 
-## Deploy on Vercel
+| Service       | URL                                                        |
+| ------------- | ---------------------------------------------------------- |
+| App           | http://localhost:3000                                      |
+| Mailpit inbox | http://localhost:8025                                      |
+| MinIO console | http://localhost:9001 (`reviewflow` / `reviewflow-secret`) |
+| Prisma Studio | `pnpm db:studio`                                           |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+No email leaves your machine in development — Mailpit catches all of it.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Commands
+
+```bash
+pnpm dev              # dev server
+pnpm build            # production build
+pnpm test             # unit tests (Vitest)
+pnpm test:e2e         # end-to-end tests (Playwright)
+pnpm lint             # ESLint
+pnpm format           # Prettier
+pnpm typecheck        # tsc --noEmit
+pnpm db:migrate       # create/apply a migration
+pnpm db:reset         # drop, migrate, reseed
+pnpm db:studio        # browse the database
+pnpm docker:up|down   # local services
+```
+
+## Project layout
+
+```
+app/                 routes, grouped by role: (auth) (user) (reviewer) (admin)
+components/          shared UI; components/ui is shadcn
+lib/
+  auth/              hashing, sessions, invites, password reset, role guards
+  workflow/          the submission state machine — all status changes route here
+  dto/               serialization boundary; where reviewer anonymity is enforced
+  storage/           S3-compatible client (MinIO + R2)
+  files/             upload validation and document metadata scrubbing
+  email/             provider interface, templates, send log
+prisma/              schema, migrations, seed
+e2e/                 Playwright specs
+```
+
+## Two things to know before changing code
+
+1. **Never mutate `Submission.status` directly.** Every transition goes through
+   `lib/workflow/state-machine.ts`, which validates legality, checks the actor's
+   role, writes the activity log, and queues notifications in one transaction.
+
+2. **Never return a Prisma entity to a page or route.** Map it through `lib/dto/`
+   first. `toUserSubmissionDTO()` has no reviewer field in its return type, which
+   is what makes an anonymity leak a compile error instead of a production
+   incident.

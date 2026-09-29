@@ -1,3 +1,12 @@
+# pnpm blocks dependency install scripts by default. Anything set true here is
+# explicitly trusted to run its postinstall.
 allowBuilds:
+  # Vitest/Vite cannot run without esbuild's platform binary.
+  esbuild: true
+  workerd: true
+  # Prisma's postinstall fetches the query engine binary and generates the client.
+  "@prisma/engines": true
+  prisma: true
+  # Image optimisation binary — unused, left unbuilt to save install time.
   sharp: false
   unrs-resolver: false
