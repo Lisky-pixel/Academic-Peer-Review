@@ -8,6 +8,10 @@
 #   mailpit  -> Resend            (catches all outbound mail; nothing escapes to real inboxes)
 #
 # Start with:  pnpm docker:up
+#
+# Images are pinned. Reproducible setup matters more here than being current,
+# and an unpinned `latest` on a dev dependency is a silent breakage waiting to
+# happen.
 
 services:
   postgres:
@@ -28,43 +32,39 @@ services:
       timeout: 5s
       retries: 10
 
+  # S3-compatible object storage.
+  #
+  # Why the bitnamilegacy image: MinIO withdrew its own community images —
+  # docker.io/minio/minio now 404s and quay.io/minio/minio requires auth — so
+  # this archived-but-public build is the last freely pullable MinIO. It is
+  # frozen, which for a local-only dev dependency is a feature, not a risk.
+  #
+  # If this repository ever disappears, storage sits behind the StorageProvider
+  # interface in lib/storage, so switching to localstack/localstack (also S3,
+  # actively maintained) is a change to this file plus two env vars.
   minio:
-    image: minio/minio:latest
+    image: bitnamilegacy/minio:2025.7.23-debian-12-r5
     container_name: reviewflow-minio
     restart: unless-stopped
-    command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: reviewflow
       MINIO_ROOT_PASSWORD: reviewflow-secret
+      # Created on first boot, so no separate `mc` init container is needed.
+      MINIO_DEFAULT_BUCKETS: reviewflow-documents
+      MINIO_SCHEME: http
     ports:
       - "9000:9000" # S3 API
       - "9001:9001" # web console
     volumes:
-      - minio-data:/data
+      - minio-data:/bitnami/minio/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
       interval: 5s
       timeout: 5s
-      retries: 10
-
-  # One-shot: creates the private bucket, then exits. `docker compose ps` showing
-  # this as "exited (0)" is the expected healthy state, not a failure.
-  minio-init:
-    image: minio/mc:latest
-    container_name: reviewflow-minio-init
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 reviewflow reviewflow-secret &&
-      mc mb --ignore-existing local/reviewflow-documents &&
-      mc anonymous set none local/reviewflow-documents &&
-      echo 'Bucket reviewflow-documents ready (private).'
-      "
+      retries: 20
 
   mailpit:
-    image: axllent/mailpit:latest
+    image: axllent/mailpit:v1.28
     container_name: reviewflow-mailpit
     restart: unless-stopped
     environment:
@@ -74,6 +74,11 @@ services:
     ports:
       - "1025:1025" # SMTP
       - "8025:8025" # web UI + REST API
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8025/readyz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   postgres-data:

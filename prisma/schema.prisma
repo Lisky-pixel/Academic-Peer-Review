@@ -1,0 +1,546 @@
+// ReviewFlow data model.
+//
+// Conventions used throughout:
+//
+//  * UUIDv7 primary keys — time-sortable, so index locality stays good as the
+//    table grows, without exposing a guessable sequential id in URLs.
+//  * Prisma's default naming (PascalCase tables, camelCase columns). All access
+//    goes through Prisma; the rare raw query quotes identifiers.
+//  * Records are kept, not deleted. History is the point of this system, so
+//    relations that represent facts use onDelete: Restrict. Only rows that are
+//    purely derived (sessions, tokens, criteria, responses) cascade.
+//  * Nullable "one active row" markers — see Assignment.isActive and
+//    ReviewTemplate.isActive. Postgres unique indexes ignore NULLs, so a
+//    `Boolean?` column that is `true` or `NULL` (never `false`) lets the
+//    database itself guarantee at most one active row per parent.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Enums
+// ──────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  USER
+  REVIEWER
+  ADMIN
+}
+
+enum UserStatus {
+  INVITED // reviewer has been invited but has not set a password yet
+  ACTIVE
+  SUSPENDED
+}
+
+enum TokenPurpose {
+  INVITE
+  PASSWORD_RESET
+}
+
+/// The submission lifecycle. Transitions are defined and enforced in
+/// lib/workflow/state-machine.ts — never assign this field directly.
+///
+/// SUBMITTED and REVIEW_SUBMITTED are transient: they are written to the
+/// activity log as historical facts but resolve immediately to
+/// PENDING_ASSIGNMENT and UNDER_ADMIN_REVIEW respectively, so nothing ever
+/// waits in them.
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+  PENDING_ASSIGNMENT
+  ASSIGNED
+  ACCEPTED
+  IN_REVIEW
+  REVIEW_SUBMITTED
+  UNDER_ADMIN_REVIEW
+  REVISION_REQUESTED
+  APPROVED
+  DELIVERED
+  CANCELLED
+}
+
+enum AssignmentStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+  COMPLETED
+}
+
+enum ReviewStatus {
+  DRAFT
+  SUBMITTED
+}
+
+enum FileKind {
+  ORIGINAL // uploaded by the author
+  ANNOTATED // uploaded by the reviewer; must be metadata-scrubbed before delivery
+}
+
+enum CriterionInputType {
+  RATING
+  TEXT
+  BOTH
+}
+
+enum AdminDecisionType {
+  APPROVED
+  REVISION_REQUESTED
+}
+
+enum EmailStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+/// Notification events, grouped by the audience that receives them (SRS §10).
+enum NotificationType {
+  // to the author
+  SUBMISSION_RECEIVED
+  SUBMISSION_STATUS_CHANGED
+  REVIEW_READY
+
+  // to the reviewer
+  ASSIGNMENT_RECEIVED
+  ASSIGNMENT_CANCELLED
+  DEADLINE_APPROACHING
+  REVISION_REQUESTED
+
+  // to the admin
+  SUBMISSION_CREATED
+  ASSIGNMENT_ANSWERED
+  REVIEW_SUBMITTED
+  REVIEW_OVERDUE
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Identity
+// ──────────────────────────────────────────────────────────────────────────
+
+model User {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// Always stored lowercase. Normalisation happens in lib/auth rather than via
+  /// a citext column, so the behaviour is identical on any Postgres host and
+  /// needs no database extension.
+  email        String     @unique
+  name         String
+  /// Null until an invited reviewer completes their invite and chooses one.
+  passwordHash String?
+  role         Role       @default(USER)
+  status       UserStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions            Session[]
+  tokens              Token[]
+  submissions         Submission[]
+  assignmentsToReview Assignment[]    @relation("AssignmentReviewer")
+  assignmentsMade     Assignment[]    @relation("AssignmentAssigner")
+  adminDecisions      AdminDecision[]
+  uploadedFiles       StoredFile[]
+  notifications       Notification[]
+  activityLogs        ActivityLog[]
+
+  @@index([role, status])
+}
+
+model Session {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// SHA-256 of the cookie token. The raw token exists only in the user's
+  /// cookie, so a database leak cannot be replayed as a login.
+  tokenHash String @unique
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  ip         String?
+  userAgent  String?
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Token {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// Hashed, for the same reason as Session.tokenHash.
+  tokenHash String       @unique
+  purpose   TokenPurpose
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  expiresAt  DateTime
+  /// Set the moment the token is used — single-use, so a leaked reset link in
+  /// an inbox cannot be replayed.
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, purpose])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Document types and review templates (admin-managed, versioned)
+// ──────────────────────────────────────────────────────────────────────────
+
+model DocumentType {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  name        String  @unique
+  slug        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  templates   ReviewTemplate[]
+  submissions Submission[]
+
+  @@index([isActive, sortOrder])
+}
+
+/// A versioned set of review criteria for one document type.
+///
+/// Editing criteria creates a new version rather than mutating this one, so
+/// reviews already submitted keep the exact questions they were answering.
+model ReviewTemplate {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  documentTypeId String       @db.Uuid
+  documentType   DocumentType @relation(fields: [documentTypeId], references: [id], onDelete: Restrict)
+
+  name    String
+  version Int    @default(1)
+
+  /// `true` for the version currently in use, `NULL` for retired versions —
+  /// never `false`. Paired with the unique index below, this makes "at most one
+  /// active template per document type" a database guarantee.
+  isActive Boolean?
+
+  createdAt DateTime @default(now())
+
+  criteria ReviewCriterion[]
+  reviews  Review[]
+
+  @@unique([documentTypeId, version])
+  @@unique([documentTypeId, isActive])
+}
+
+model ReviewCriterion {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  templateId String         @db.Uuid
+  template   ReviewTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  label     String
+  helpText  String?
+  inputType CriterionInputType @default(BOTH)
+  maxRating Int                @default(5)
+  required  Boolean            @default(true)
+  sortOrder Int                @default(0)
+
+  responses ReviewResponse[]
+
+  @@index([templateId, sortOrder])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Submissions
+// ──────────────────────────────────────────────────────────────────────────
+
+model Submission {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// Human-quotable identifier, e.g. "RF-2026-0147". Allocated atomically via
+  /// ReferenceCounter so concurrent submissions cannot collide.
+  reference String @unique
+
+  authorId String @db.Uuid
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  documentTypeId String       @db.Uuid
+  documentType   DocumentType @relation(fields: [documentTypeId], references: [id], onDelete: Restrict)
+
+  title        String
+  purpose      String?
+  description  String?
+  instructions String?
+  focusAreas   String?
+  deadline     DateTime?
+
+  status SubmissionStatus @default(DRAFT)
+
+  /// Whether the assigned reviewer may see who wrote this. Reviewer identity is
+  /// hidden from the author unconditionally; this toggle governs only the
+  /// opposite direction, and is resolved in exactly one place —
+  /// toReviewerSubmissionDTO(). Seeded from the "defaultAuthorVisibility"
+  /// AppSetting when the submission is created.
+  authorVisibleToReviewer Boolean @default(true)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  submittedAt DateTime?
+  approvedAt  DateTime?
+  /// Set when the author first opens or downloads the completed review, which
+  /// is what distinguishes DELIVERED from APPROVED.
+  deliveredAt DateTime?
+  cancelledAt DateTime?
+
+  files         StoredFile[]
+  assignments   Assignment[]
+  reviews       Review[]
+  notifications Notification[]
+  emailLogs     EmailLog[]
+
+  @@index([authorId, status])
+  @@index([status, deadline])
+  @@index([createdAt])
+}
+
+model StoredFile {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  submissionId String     @db.Uuid
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+
+  kind FileKind
+
+  /// Object key in the bucket. Files are never served from this origin; the app
+  /// hands out short-lived presigned URLs instead.
+  storageKey       String @unique
+  /// What the uploader called it. For ANNOTATED files this is never shown to
+  /// the author — a reviewer's filename can identify them.
+  originalFilename String
+  mimeType         String
+  sizeBytes        Int
+  checksum         String
+
+  uploadedById String @db.Uuid
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  /// Timestamp proving document metadata was stripped. The author-facing
+  /// download route refuses any ANNOTATED file where this is null.
+  scrubbedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([submissionId, kind])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Assignment and review
+// ──────────────────────────────────────────────────────────────────────────
+
+/// One reviewer being given one submission.
+///
+/// Reassignment inserts a new row and retires the old one rather than
+/// overwriting, so the audit trail of who held a document survives.
+model Assignment {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  submissionId String     @db.Uuid
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+
+  reviewerId String @db.Uuid
+  reviewer   User   @relation("AssignmentReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  assignedById String @db.Uuid
+  assignedBy   User   @relation("AssignmentAssigner", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  status AssignmentStatus @default(PENDING)
+
+  /// `true` while this is the live assignment, `NULL` once superseded — never
+  /// `false`. With the unique index below, the database guarantees a submission
+  /// cannot have two live assignments, even under a double-click or a race.
+  isActive Boolean?
+
+  dueAt DateTime?
+
+  assignedAt  DateTime  @default(now())
+  acceptedAt  DateTime?
+  declinedAt  DateTime?
+  cancelledAt DateTime?
+  completedAt DateTime?
+
+  declineReason String?
+
+  review Review?
+
+  @@unique([submissionId, isActive])
+  @@index([reviewerId, status])
+  @@index([dueAt])
+}
+
+model Review {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  submissionId String     @db.Uuid
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+
+  /// One review per assignment. A reassignment produces a new assignment and
+  /// therefore a new review, leaving the previous reviewer's work intact.
+  assignmentId String     @unique @db.Uuid
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+
+  templateId String         @db.Uuid
+  template   ReviewTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+
+  overallFeedback String?
+  status          ReviewStatus @default(DRAFT)
+
+  /// Increments each time the admin sends this back for changes.
+  revisionRound Int @default(0)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  submittedAt DateTime?
+
+  responses ReviewResponse[]
+  decisions AdminDecision[]
+
+  @@index([submissionId])
+}
+
+model ReviewResponse {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  reviewId String @db.Uuid
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  criterionId String          @db.Uuid
+  criterion   ReviewCriterion @relation(fields: [criterionId], references: [id], onDelete: Restrict)
+
+  rating  Int?
+  comment String?
+
+  @@unique([reviewId, criterionId])
+}
+
+/// An admin approving a review or sending it back. Append-only: each round of
+/// the approval loop leaves its own row.
+model AdminDecision {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  reviewId String @db.Uuid
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Restrict)
+
+  adminId String @db.Uuid
+  admin   User   @relation(fields: [adminId], references: [id], onDelete: Restrict)
+
+  decision AdminDecisionType
+  note     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([reviewId])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Notifications, email, audit
+// ──────────────────────────────────────────────────────────────────────────
+
+/// In-app notification (the bell). Email is tracked separately in EmailLog,
+/// because one event can produce both and they succeed or fail independently.
+model Notification {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type    NotificationType
+  title   String
+  body    String?
+  linkUrl String?
+
+  submissionId String?     @db.Uuid
+  submission   Submission? @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([createdAt])
+}
+
+/// Record of every outbound email. Needed to answer "did the reviewer actually
+/// get told?" — the question that manual WhatsApp chasing existed to solve.
+model EmailLog {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  toEmail  String
+  template String
+  subject  String
+
+  submissionId String?     @db.Uuid
+  submission   Submission? @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+
+  status     EmailStatus @default(QUEUED)
+  /// Provider-side id, for tracing a message in the Resend dashboard.
+  providerId String?
+  error      String?
+  attempts   Int         @default(0)
+
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+
+  @@index([status, createdAt])
+  @@index([submissionId])
+}
+
+/// Append-only audit trail. This is the one place reviewer identity is always
+/// recorded in full, including for actions the author sees anonymously.
+model ActivityLog {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// Null for system-initiated actions such as scheduled deadline reminders.
+  actorId   String? @db.Uuid
+  actor     User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorRole Role?
+
+  action     String
+  entityType String
+  entityId   String @db.Uuid
+
+  metadata Json?
+  ip       String?
+
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// System
+// ──────────────────────────────────────────────────────────────────────────
+
+/// Admin-editable global settings, e.g. "defaultAuthorVisibility".
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+/// Per-year counter behind the submission reference number. Incremented with a
+/// single atomic upsert, which is what makes concurrent submissions safe.
+model ReferenceCounter {
+  year      Int @id
+  lastValue Int @default(0)
+}
