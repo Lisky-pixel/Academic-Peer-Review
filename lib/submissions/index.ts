@@ -113,18 +113,40 @@ const ADMIN_SUBMISSION_SELECT = {
   submittedAt: true,
   documentType: { select: { id: true, name: true } },
   author: { select: { id: true, name: true, email: true } },
+  assignments: {
+    where: { isActive: true },
+    select: { dueAt: true, reviewer: { select: { name: true } } },
+  },
 } satisfies Prisma.SubmissionSelect;
 
 export type AdminSubmissionRecord = Prisma.SubmissionGetPayload<{
   select: typeof ADMIN_SUBMISSION_SELECT;
 }>;
 
+export type AdminSubmissionFilter = {
+  documentTypeId?: string;
+  /** "week": due within seven days. "overdue": already past its deadline. */
+  due?: "week" | "overdue";
+};
+
 /** Everything authors have submitted. Drafts are private until submitted. */
 export function findSubmissionsForAdmin(
   statuses?: SubmissionStatus[],
+  filter: AdminSubmissionFilter = {},
+  now: Date = new Date(),
 ): Promise<AdminSubmissionRecord[]> {
+  const inAWeek = new Date(now.getTime() + 7 * 86_400_000);
   return db.submission.findMany({
-    where: { status: statuses ? { in: statuses } : { not: "DRAFT" } },
+    where: {
+      status: statuses ? { in: statuses } : { not: "DRAFT" },
+      documentTypeId: filter.documentTypeId,
+      deadline:
+        filter.due === "overdue"
+          ? { lt: now }
+          : filter.due === "week"
+            ? { gte: now, lte: inAWeek }
+            : undefined,
+    },
     orderBy: [{ submittedAt: "asc" }, { createdAt: "asc" }],
     select: ADMIN_SUBMISSION_SELECT,
   });

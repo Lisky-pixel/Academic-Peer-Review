@@ -581,3 +581,114 @@ test("a draft can be edited and then discarded", async ({ page, request }) => {
     "Cancelled",
   );
 });
+
+test("an admin assigns and reassigns a reviewer, and the author never learns who", async ({
+  page,
+  request,
+  browser,
+}) => {
+  const title = `Assignable ${randomUUID().slice(0, 8)}`;
+  const authorEmail = freshEmail("assignee");
+
+  // An author submits a document.
+  await registerAndConfirm(page, request, authorEmail);
+  await startDraft(page, title);
+  await page
+    .getByLabel("Choose your document")
+    .setInputFiles({ name: "essay.pdf", mimeType: "application/pdf", buffer: SAMPLE_PDF });
+  await expect(page.getByText("essay.pdf")).toBeVisible();
+  await page.getByRole("button", { name: "Submit for review" }).click();
+  await expect(page.getByText("Awaiting a reviewer")).toBeVisible();
+  const authorUrl = page.url();
+  await signOut(page);
+
+  // The admin opens it from the list and assigns the first seeded reviewer.
+  await login(page, "admin@reviewflow.local");
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.getByRole("link", { name: new RegExp(title) }).click();
+  await expect(page).toHaveURL(/\/admin\/submissions\/[0-9a-f-]{36}$/);
+  await expect(page.getByText("Needs a reviewer")).toBeVisible();
+
+  const reviewers = page.getByRole("radio");
+  expect(await reviewers.count()).toBeGreaterThanOrEqual(2);
+  const firstChoice = page.locator("label").filter({ hasText: "reviewer1@reviewflow.local" });
+  const firstName = (await firstChoice.locator("span.font-medium").first().innerText()).trim();
+  await firstChoice.click();
+  await page.getByRole("button", { name: "Assign reviewer" }).click();
+
+  await expect(page.getByText("Assigned", { exact: true })).toBeVisible();
+  await expect(page.getByText("Waiting for the reviewer to accept")).toBeVisible();
+  await expect(page.getByText("Reviewer assigned", { exact: true })).toBeVisible();
+
+  // The admin can download the author's document.
+  const adminDownload = await page.request.get(`${page.url()}/document`);
+  expect(adminDownload.status()).toBe(200);
+  expect(await adminDownload.body()).toEqual(SAMPLE_PDF);
+
+  // Reassign to the second reviewer, with a reason.
+  await page.getByText("Reassign to someone else").click();
+  await expect(page.locator("label").filter({ hasText: "reviewer1@reviewflow.local" })).toHaveCount(
+    0,
+  );
+  await page.locator("label").filter({ hasText: "reviewer2@reviewflow.local" }).click();
+  await page.getByRole("button", { name: "Reassign" }).click();
+  await expect(page.getByText("Say why this is being reassigned.")).toHaveCount(0);
+  // The browser enforces the required reason before anything is sent.
+  await page.getByLabel("Reason for reassigning").fill("First reviewer is on leave.");
+  await page.getByRole("button", { name: "Reassign" }).click();
+
+  await expect(page.getByText("Reassigned to another reviewer")).toBeVisible();
+  await expect(page.getByText("First reviewer is on leave.")).toBeVisible();
+  await expect(page.getByText("Previously with")).toBeVisible();
+  await expect(page.getByText("reviewer2@reviewflow.local")).toBeVisible();
+
+  // Author visibility can be switched off and is logged.
+  await page.getByRole("button", { name: "Hide the author from the reviewer" }).click();
+  await expect(page.getByText("The author is hidden from the reviewer.")).toBeVisible();
+  await expect(page.getByText("Author visibility changed")).toBeVisible();
+
+  // The list shows who holds it now.
+  await page.goto("/admin?view=active");
+  await expect(page.getByRole("link", { name: new RegExp(title) })).toContainText("With ");
+  await signOut(page);
+
+  // Back as the author: it has moved on, and names nobody.
+  const authorContext = await browser.newContext();
+  const authorPage = await authorContext.newPage();
+  await authorPage.setExtraHTTPHeaders({ "x-forwarded-for": `e2e-${randomUUID()}` });
+  await login(authorPage, authorEmail);
+  await expect(authorPage).toHaveURL(/\/dashboard$/);
+  await authorPage.goto(authorUrl);
+  await expect(authorPage.getByText("Reviewer assigned").first()).toBeVisible();
+
+  const html = await authorPage.content();
+  expect(html).not.toContain(firstName);
+  expect(html).not.toContain("reviewer1@reviewflow.local");
+  expect(html).not.toContain("reviewer2@reviewflow.local");
+  expect(html).not.toContain("on leave");
+  // An author cannot withdraw once a reviewer has been asked to read it.
+  await expect(authorPage.getByText("Withdraw this submission")).toHaveCount(0);
+  // And the admin's pages are not theirs to open.
+  expect(
+    (await authorPage.request.get("/admin/submissions/" + authorUrl.split("/").pop())).url(),
+  ).toMatch(/\/dashboard$/);
+  await authorContext.close();
+});
+
+test("the admin list filters by document type and deadline", async ({ page }) => {
+  await login(page, "admin@reviewflow.local");
+  await expect(page).toHaveURL(/\/admin$/);
+
+  await page.goto("/admin?view=all");
+  await page.getByLabel("Document type").selectOption({ label: "Journal" });
+  await page.getByLabel("Deadline").selectOption({ label: "Past its deadline" });
+  await page.getByRole("button", { name: "Filter" }).click();
+
+  await expect(page).toHaveURL(/view=all/);
+  await expect(page).toHaveURL(/type=[0-9a-f-]{36}/);
+  await expect(page).toHaveURL(/due=overdue/);
+  await expect(page.getByText("Nothing matches those filters.")).toBeVisible();
+
+  await page.getByRole("link", { name: "Clear" }).click();
+  await expect(page).toHaveURL(/\/admin\?view=all$/);
+});

@@ -88,7 +88,7 @@ export function SubmissionForm({
       <FormError state={state} />
       {submissionId && <input type="hidden" name="submissionId" value={submissionId} />}
 
-      <fieldset className="space-y-5">
+      <fieldset className="min-w-0 space-y-5">
         <legend className="font-heading text-xl font-medium">The document</legend>
         <Field
           name="title"
@@ -134,7 +134,7 @@ export function SubmissionForm({
         />
       </fieldset>
 
-      <fieldset className="space-y-5">
+      <fieldset className="min-w-0 space-y-5">
         <legend className="font-heading text-xl font-medium">For your reviewer</legend>
         <TextArea
           name="instructions"
@@ -160,7 +160,7 @@ export function SubmissionForm({
         />
       </fieldset>
 
-      <fieldset className="space-y-5">
+      <fieldset className="min-w-0 space-y-5">
         <legend className="font-heading text-xl font-medium">Timing</legend>
         <Field
           name="deadline"

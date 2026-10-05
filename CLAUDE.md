@@ -10,9 +10,9 @@ plan and the verification checklist.
 
 ## Status
 
-Phases 0–2 and 4 are complete and verified. Phase 3 is complete **except
-`lib/files/scrub.ts`**, which is not written yet. Next is Phase 5 (admin
-assignment).
+Phases 0–2, 4 and 5 are complete and verified. Phase 3 is complete **except
+`lib/files/scrub.ts`**, which is not written yet. Next is Phase 6 (reviewer
+workspace).
 
 **Scrubbing must be built with Phase 6**, before any reviewer-uploaded
 (`ANNOTATED`) file can reach an author — it is the anonymity layer for file
@@ -34,8 +34,22 @@ Phases 3–4 (storage and submissions):
 - `lib/submissions` is the author side. Every query is scoped to the author.
 - Authors never see the internal status: `toUserSubmissionDTO()` exposes an
   `AuthorStage` (`lib/submissions/stage.ts`) so internal bounces do not show.
-- Author pages are under `/dashboard/submissions`. `/admin` lists submitted
-  work by status; it is read-only until Phase 5.
+- Author pages are under `/dashboard/submissions`.
+
+Phase 5 (assignment), in `lib/assignments`:
+
+- `assignReviewer` / `reassignReviewer` call `transition()` and write the
+  `Assignment` rows in its `apply` hook. Reassigning retires the old row
+  (`isActive: null`, `CANCELLED`) and needs a reason; history is never
+  overwritten.
+- `/admin` lists submitted work, filterable by status, type and deadline;
+  `/admin/submissions/[id]` is the detail page with the reviewer picker
+  (live workload per reviewer), the author-visibility switch, and the audit
+  trail. `lib/dto/assignment.ts` holds the admin-only DTOs — they carry
+  reviewer identity and must never reach an author page.
+- A reviewer is notified in-app on assignment but **cannot act yet**: accept,
+  decline and the review workspace are Phase 6, so an assigned submission
+  stays at `ASSIGNED`.
 - **Production needs a CORS rule on the R2 bucket** allowing `PUT` from the
   app origin with the `Content-Type` header. MinIO allows all origins by
   default, so this does not show up in development.
@@ -126,7 +140,11 @@ enable` needs admin to write into `Program Files`.
   and fails with "Unknown field" on the new columns.
 - **`*.db.test.ts` files run in parallel**, so `cleanUpTestUsers()` removes
   only the accounts its own file created (plus debris over an hour old).
-  Always make test accounts with `testEmail()`.
+  Always make test accounts with `testEmail()`, and delete them with
+  `purgeUsers()`, which removes their submissions in dependency order.
+- **A `<fieldset>` will not shrink below its content** unless it has
+  `min-w-0`; this caused sideways scrolling on phones. Same for grids: use
+  `grid-cols-[minmax(0,1fr)]` as the base.
 - The network on this machine drops mid-pull; retry loops around
   `docker compose pull` are worth it.
 

@@ -75,6 +75,8 @@ export type AdminSubmissionDTO = {
   documentType: { id: string; name: string };
   status: SubmissionStatus;
   author: { id: string; name: string; email: string };
+  /** Who currently holds it. Administrators only — never shown to the author. */
+  reviewerName: string | null;
   deadline: string | null;
   createdAt: string;
   submittedAt: string | null;
@@ -88,6 +90,7 @@ export function toAdminSubmissionDTO(record: AdminSubmissionRecord): AdminSubmis
     documentType: { id: record.documentType.id, name: record.documentType.name },
     status: record.status,
     author: { id: record.author.id, name: record.author.name, email: record.author.email },
+    reviewerName: record.assignments[0]?.reviewer.name ?? null,
     deadline: record.deadline?.toISOString() ?? null,
     createdAt: record.createdAt.toISOString(),
     submittedAt: record.submittedAt?.toISOString() ?? null,

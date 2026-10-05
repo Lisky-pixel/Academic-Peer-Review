@@ -60,10 +60,39 @@ export async function cleanUpTestUsers(): Promise<void> {
     },
     select: { id: true },
   });
-  const ids = users.map((user) => user.id);
-  if (ids.length === 0) return;
+  await purgeUsers(users.map((user) => user.id));
+}
 
-  await db.activityLog.deleteMany({ where: { entityType: "User", entityId: { in: ids } } });
-  // Sessions and tokens cascade.
-  await db.user.deleteMany({ where: { id: { in: ids } } });
+/**
+ * Deletes users together with everything that hangs off them. Facts are
+ * protected by onDelete: Restrict on purpose, so removing a test account
+ * means removing its submissions and their rows first, in dependency order.
+ * For test data only — nothing in the application deletes like this.
+ */
+export async function purgeUsers(userIds: string[]): Promise<void> {
+  if (userIds.length === 0) return;
+
+  const submissions = await db.submission.findMany({
+    where: { authorId: { in: userIds } },
+    select: { id: true },
+  });
+  const submissionIds = submissions.map((submission) => submission.id);
+
+  await db.activityLog.deleteMany({ where: { entityId: { in: [...userIds, ...submissionIds] } } });
+  await db.notification.deleteMany({ where: { submissionId: { in: submissionIds } } });
+  await db.assignment.deleteMany({
+    where: {
+      OR: [
+        { submissionId: { in: submissionIds } },
+        { reviewerId: { in: userIds } },
+        { assignedById: { in: userIds } },
+      ],
+    },
+  });
+  await db.storedFile.deleteMany({
+    where: { OR: [{ submissionId: { in: submissionIds } }, { uploadedById: { in: userIds } }] },
+  });
+  await db.submission.deleteMany({ where: { id: { in: submissionIds } } });
+  // Sessions, tokens and notifications addressed to the user cascade.
+  await db.user.deleteMany({ where: { id: { in: userIds } } });
 }

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SubmitPanel, WithdrawPanel } from "@/app/(user)/dashboard/submissions/[id]/submit-panel";
-import { BackLink } from "@/app/(user)/dashboard/submissions/back-link";
+import { BackLink } from "@/components/back-link";
 import { DocumentUploader } from "@/app/(user)/dashboard/submissions/document-uploader";
 import { RoleArea } from "@/components/role-area";
 import { StatusPill } from "@/components/status-pill";

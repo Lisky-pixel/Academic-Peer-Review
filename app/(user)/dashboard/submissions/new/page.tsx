@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { BackLink } from "@/app/(user)/dashboard/submissions/back-link";
+import { BackLink } from "@/components/back-link";
 import { SubmissionForm } from "@/app/(user)/dashboard/submissions/submission-form";
 import { RoleArea } from "@/components/role-area";
 import { requireRole } from "@/lib/auth/guards";

@@ -19,7 +19,7 @@ import {
   withdrawSubmission,
 } from "@/lib/submissions";
 import type { SubmissionDetails } from "@/lib/submissions/schema";
-import { dbAvailable, testEmail } from "@/lib/test/db";
+import { dbAvailable, purgeUsers, testEmail } from "@/lib/test/db";
 import { SYSTEM_ACTOR, transition } from "@/lib/workflow/state-machine";
 
 /**
@@ -107,17 +107,7 @@ async function upload(
 
 afterAll(async () => {
   if (!dbAvailable) return;
-  const submissions = await db.submission.findMany({
-    where: { authorId: { in: createdUserIds } },
-    select: { id: true },
-  });
-  const ids = submissions.map((s) => s.id);
-  await db.activityLog.deleteMany({ where: { entityId: { in: [...ids, ...createdUserIds] } } });
-  await db.notification.deleteMany({ where: { submissionId: { in: ids } } });
-  await db.assignment.deleteMany({ where: { submissionId: { in: ids } } });
-  await db.storedFile.deleteMany({ where: { submissionId: { in: ids } } });
-  await db.submission.deleteMany({ where: { id: { in: ids } } });
-  await db.user.deleteMany({ where: { id: { in: createdUserIds } } });
+  await purgeUsers(createdUserIds);
   if (storageAvailable) await Promise.allSettled(uploadedKeys.map((key) => storage().delete(key)));
 });
 
