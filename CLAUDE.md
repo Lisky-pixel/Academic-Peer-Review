@@ -10,13 +10,8 @@ plan and the verification checklist.
 
 ## Status
 
-Phases 0–2, 4 and 5 are complete and verified. Phase 3 is complete **except
-`lib/files/scrub.ts`**, which is not written yet. Next is Phase 6 (reviewer
-workspace).
-
-**Scrubbing must be built with Phase 6**, before any reviewer-uploaded
-(`ANNOTATED`) file can reach an author — it is the anonymity layer for file
-bytes. Nothing uploads `ANNOTATED` files yet, so nothing is exposed today.
+Phases 0–6 are complete and verified. Next is Phase 7 (admin approval and
+delivery).
 
 Phases 3–4 (storage and submissions):
 
@@ -47,9 +42,39 @@ Phase 5 (assignment), in `lib/assignments`:
   (live workload per reviewer), the author-visibility switch, and the audit
   trail. `lib/dto/assignment.ts` holds the admin-only DTOs — they carry
   reviewer identity and must never reach an author page.
-- A reviewer is notified in-app on assignment but **cannot act yet**: accept,
-  decline and the review workspace are Phase 6, so an assigned submission
-  stays at `ASSIGNED`.
+  Phase 6 (reviewer workspace), in `lib/reviews`:
+
+- `/reviewer` is the queue (to answer / in progress / overdue / submitted);
+  `/reviewer/reviews/[id]` is the invitation, then the split-pane workspace,
+  then a read-only summary. Every query is scoped to submissions the reviewer
+  currently holds (`isActive` assignment).
+- The first autosave starts the review (`ACCEPTED` → `IN_REVIEW`) and pins it
+  to the template that was active then. Autosave sends only changed criteria.
+- **`lib/files/scrub.ts` removes the reviewer's identity from file bytes**:
+  Word document properties, every `w:author` on tracked changes and
+  comments, `people.xml`; PDF Info entries, the XMP stream and every
+  annotation's `/T`. It fails closed. `scrub.test.ts` is the guardrail —
+  extend it whenever a new place a name can hide is found.
+- Reviewers may only return PDF, DOCX or TXT, because only those can be
+  scrubbed. `confirmAnnotatedUpload` stores **only** the scrubbed copy, named
+  from the reference, with `scrubbedAt` set; the raw upload is always deleted.
+  Any author-facing download of an `ANNOTATED` file (Phase 7) must refuse a
+  row without `scrubbedAt`.
+- `toReviewerSubmissionDTO()` in `lib/dto/review.ts` is the only place
+  `authorVisibleToReviewer` is resolved. When the author is hidden, the
+  document's filename is replaced by the reference too.
+- Preview: PDF via PDF.js in the browser; DOCX converted by Mammoth on the
+  server and shown in an `<iframe sandbox="">` (never inserted into our DOM);
+  TXT as text. DOC and RTF have no preview.
+- `Review.overallFeedback` is unused: overall feedback is the last criterion
+  of every template.
+
+Known limits, deliberately left:
+
+- Hiding the author hides their name and filename, **not** what is inside
+  their document or its metadata. A CV names its author regardless.
+- Scrubbing removes metadata, not a name a reviewer types into a comment.
+- The admin cannot yet read a submitted review; that is Phase 7.
 - **Production needs a CORS rule on the R2 bucket** allowing `PUT` from the
   app origin with the `Content-Type` header. MinIO allows all origins by
   default, so this does not show up in development.
@@ -138,13 +163,18 @@ enable` needs admin to write into `Program Files`.
 - **Restart `pnpm dev` after any migration.** The Prisma client is cached on
   `globalThis` across hot reloads, so a running server keeps the old schema
   and fails with "Unknown field" on the new columns.
-- **`*.db.test.ts` files run in parallel**, so `cleanUpTestUsers()` removes
+- **Test files run one at a time** (`fileParallelism: false`), about 45s in
+  all. In parallel, one file's cleanup deleted an admin while another file's
+  submission was notifying every admin. `cleanUpTestUsers()` still removes
   only the accounts its own file created (plus debris over an hour old).
   Always make test accounts with `testEmail()`, and delete them with
   `purgeUsers()`, which removes their submissions in dependency order.
 - **A `<fieldset>` will not shrink below its content** unless it has
   `min-w-0`; this caused sideways scrolling on phones. Same for grids: use
   `grid-cols-[minmax(0,1fr)]` as the base.
+- **Never put an apostrophe or a regex backslash in a Bash heredoc or
+  `node -e` string** in this environment: apostrophes break the shell quoting
+  and `/` loses its backslash. Use the Write/Edit tools for such text.
 - The network on this machine drops mid-pull; retry loops around
   `docker compose pull` are worth it.
 

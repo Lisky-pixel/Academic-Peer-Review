@@ -692,3 +692,212 @@ test("the admin list filters by document type and deadline", async ({ page }) =>
   await page.getByRole("link", { name: "Clear" }).click();
   await expect(page).toHaveURL(/\/admin\?view=all$/);
 });
+
+const E2E_REVIEWER = "Zebediah Quillfeather";
+
+/** A real one-page PDF, so the in-browser preview has something to draw. */
+async function realPdf(): Promise<Buffer> {
+  const { PDFDocument } = await import("pdf-lib");
+  const document = await PDFDocument.create();
+  const page = document.addPage([420, 300]);
+  page.drawText("At sixteen I spent a summer counting buses.", { x: 30, y: 240, size: 14 });
+  return Buffer.from(await document.save());
+}
+
+/** A Word file as an annotating reviewer would return it, name and all. */
+async function annotatedDocx(): Promise<Buffer> {
+  const { strToU8, zipSync } = await import("fflate");
+  const w = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  return Buffer.from(
+    zipSync({
+      "[Content_Types].xml": strToU8('<?xml version="1.0"?><Types/>'),
+      "docProps/core.xml": strToU8(
+        `<cp:coreProperties xmlns:cp="x" xmlns:dc="y"><dc:creator>${E2E_REVIEWER}</dc:creator><cp:lastModifiedBy>${E2E_REVIEWER}</cp:lastModifiedBy></cp:coreProperties>`,
+      ),
+      "word/document.xml": strToU8(
+        `<w:document ${w}><w:body><w:p><w:ins w:id="1" w:author="${E2E_REVIEWER}"><w:r><w:t>drawn to</w:t></w:r></w:ins></w:p></w:body></w:document>`,
+      ),
+      "word/comments.xml": strToU8(
+        `<w:comments ${w}><w:comment w:id="0" w:author="${E2E_REVIEWER}" w:initials="ZQ"><w:p><w:r><w:t>Start here.</w:t></w:r></w:p></w:comment></w:comments>`,
+      ),
+    }),
+  );
+}
+
+/** An author submits `title`, and the admin assigns it to a seeded reviewer. */
+async function submitAndAssign(
+  page: Page,
+  request: APIRequestContext,
+  title: string,
+  reviewerEmail: string,
+) {
+  await registerAndConfirm(page, request, freshEmail("flow"));
+  await startDraft(page, title);
+  await page
+    .getByLabel("Choose your document")
+    .setInputFiles({ name: "statement.pdf", mimeType: "application/pdf", buffer: await realPdf() });
+  await expect(page.getByText("statement.pdf")).toBeVisible();
+  await page.getByRole("button", { name: "Submit for review" }).click();
+  await expect(page.getByText("Awaiting a reviewer")).toBeVisible();
+  const authorUrl = page.url();
+  await signOut(page);
+
+  await login(page, "admin@reviewflow.local");
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.getByRole("link", { name: new RegExp(title) }).click();
+  await page.locator("label").filter({ hasText: reviewerEmail }).click();
+  await page.getByRole("button", { name: "Assign reviewer" }).click();
+  await expect(page.getByText("Waiting for the reviewer to accept")).toBeVisible();
+  await signOut(page);
+  return authorUrl;
+}
+
+test("a reviewer accepts, previews, reviews, returns a scrubbed file and submits", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(120_000);
+  const title = `Reviewable ${randomUUID().slice(0, 8)}`;
+  await submitAndAssign(page, request, title, "reviewer1@reviewflow.local");
+
+  // The reviewer finds it waiting for an answer.
+  await login(page, "reviewer1@reviewflow.local");
+  await expect(page).toHaveURL(/\/reviewer$/);
+  await page.getByRole("link", { name: new RegExp(title) }).click();
+  await expect(page).toHaveURL(/\/reviewer\/reviews\/[0-9a-f-]{36}$/);
+  await expect(page.getByText("Waiting for your answer")).toBeVisible();
+  // No document and no form until they accept.
+  await expect(page.locator("canvas")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Accept assignment" }).click();
+  await expect(page.getByRole("heading", { name: "Your review" })).toBeVisible();
+
+  // The PDF is drawn in the page by PDF.js.
+  const canvas = page.locator("canvas").first();
+  await expect(canvas).toBeVisible({ timeout: 30_000 });
+  await expect
+    .poll(
+      () =>
+        canvas.evaluate((element: HTMLCanvasElement) => {
+          const context = element.getContext("2d")!;
+          const { data } = context.getImageData(0, 0, element.width, element.height);
+          // Any dark pixel means text was actually rendered, not a blank page.
+          for (let i = 0; i < data.length; i += 4) {
+            if (data[i]! < 200 && data[i + 3]! > 0) return true;
+          }
+          return false;
+        }),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
+
+  // Submitting an empty review is refused, and says what is missing.
+  await page.getByRole("button", { name: "Submit review" }).click();
+  await expect(page.getByText(/still need an answer/)).toBeVisible();
+  await expect(page.getByText(/Still needed: Grammar and mechanics/)).toBeVisible();
+
+  // Score every rated criterion 4 and write the overall feedback.
+  const groups = page.getByRole("radiogroup");
+  const count = await groups.count();
+  expect(count).toBeGreaterThanOrEqual(5);
+  for (let i = 0; i < count; i++) {
+    await groups.nth(i).locator("label").nth(3).click();
+  }
+  await page
+    .getByLabel("Overall feedback comments")
+    .fill("A strong, specific story. Merge the second and third paragraphs.");
+  await page.getByLabel("Grammar and mechanics comments").fill("Two comma splices on page one.");
+  await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 15_000 });
+
+  // Still refused: no annotated copy yet.
+  await page.getByRole("button", { name: "Submit review" }).click();
+  await expect(page.getByText(/Attach your annotated copy/)).toBeVisible();
+
+  // Autosave really saved: a reload brings the answers back.
+  await page.reload();
+  await expect(page.getByLabel("Grammar and mechanics comments")).toHaveValue(
+    "Two comma splices on page one.",
+  );
+  await expect(page.getByRole("radiogroup").first().getByRole("radio").nth(3)).toBeChecked();
+
+  // A legacy .doc cannot be scrubbed, so it is refused.
+  await page.getByLabel("Choose your annotated copy").setInputFiles({
+    name: "notes.doc",
+    mimeType: "application/msword",
+    buffer: Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
+  });
+  await expect(page.getByText(/annotated copy as a PDF, DOCX or TXT/)).toBeVisible();
+
+  // The annotated Word file goes up under the filename the reviewer gave it,
+  await page.getByLabel("Choose your annotated copy").setInputFiles({
+    name: `${E2E_REVIEWER} notes FINAL.docx`,
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer: await annotatedDocx(),
+  });
+  // and comes back named from the reference.
+  await expect(page.getByText(/RF-\d{4}-\d+-reviewed\.docx/)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(E2E_REVIEWER)).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Submit review" }).click();
+  await expect(page.getByText(/An administrator will read it/)).toBeVisible();
+  await expect(page.getByText("4 of 5").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Submit review" })).toHaveCount(0);
+
+  // What would be downloaded contains that name nowhere.
+  const download = await page.request.get(`${page.url()}/annotated`);
+  expect(download.status()).toBe(200);
+  const { strFromU8, unzipSync } = await import("fflate");
+  const parts = unzipSync(new Uint8Array(await download.body()));
+  const everything = Object.values(parts)
+    .map((part) => strFromU8(part))
+    .join("\n");
+  expect(everything).not.toContain(E2E_REVIEWER);
+  expect(everything).not.toContain("Quillfeather");
+  expect(everything).toContain('w:author="Reviewer"');
+  expect(everything).toContain("Start here.");
+
+  // It has moved to the Submitted tab of the queue.
+  await page.goto("/reviewer?tab=completed");
+  await expect(page.getByRole("link", { name: new RegExp(title) })).toBeVisible();
+  await signOut(page);
+
+  // And it is in the approval queue.
+  await login(page, "admin@reviewflow.local");
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.goto("/admin?view=approval");
+  await expect(page.getByRole("link", { name: new RegExp(title) })).toContainText("Needs approval");
+});
+
+test("a reviewer declines with a reason and the admin sees it back in the queue", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(90_000);
+  const title = `Declinable ${randomUUID().slice(0, 8)}`;
+  await submitAndAssign(page, request, title, "reviewer2@reviewflow.local");
+
+  await login(page, "reviewer2@reviewflow.local");
+  await expect(page).toHaveURL(/\/reviewer$/);
+  await page.getByRole("link", { name: new RegExp(title) }).click();
+  await expect(page.getByText("Waiting for your answer")).toBeVisible();
+  const reviewUrl = page.url();
+
+  await page.getByText("I cannot take this one").click();
+  await page.getByLabel("Why are you declining?").fill("Away that week.");
+  await page.getByRole("button", { name: "Decline assignment" }).click();
+  await expect(page).toHaveURL(/\/reviewer$/);
+  await expect(page.getByRole("link", { name: new RegExp(title) })).toHaveCount(0);
+
+  // It is no longer theirs to open, or to download.
+  expect((await page.request.get(reviewUrl)).status()).toBe(404);
+  expect((await page.request.get(`${reviewUrl}/document`)).status()).toBe(404);
+  await signOut(page);
+
+  await login(page, "admin@reviewflow.local");
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.getByRole("link", { name: new RegExp(title) }).click();
+  await expect(page).toHaveURL(/\/admin\/submissions\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole("heading", { name: "Assign a reviewer" })).toBeVisible();
+  await expect(page.getByText("Previously with")).toBeVisible();
+  await expect(page.getByText("Away that week.").first()).toBeVisible();
+});

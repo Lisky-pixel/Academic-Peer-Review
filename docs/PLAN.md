@@ -1,7 +1,5 @@
-> **Status (2026-10-05):** Phases 0–2, 4 and 5 complete and verified. Phase 3
-> is complete except file scrubbing, which moves to Phase 6 (it only applies
-> to reviewer uploads). Next is Phase 6 (reviewer workspace). Current working
-> context lives in `CLAUDE.md`.
+> **Status (2026-10-05):** Phases 0–6 complete and verified. Next is Phase 7
+> (admin approval and delivery). Current working context lives in `CLAUDE.md`.
 
 # ReviewFlow — Implementation Plan
 

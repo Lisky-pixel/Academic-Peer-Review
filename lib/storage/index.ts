@@ -37,6 +37,11 @@ export interface StorageProvider {
   head(key: string): Promise<StoredObjectInfo | null>;
   /** The whole object. Only call after `head` has confirmed it is small. */
   read(key: string): Promise<Uint8Array>;
+  /**
+   * Stores bytes the server itself produced — a scrubbed copy of a reviewer's
+   * file. Uploads from a browser never come this way; they use a signed URL.
+   */
+  write(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
   delete(key: string): Promise<void>;
 }
 
@@ -110,6 +115,18 @@ class S3StorageProvider implements StorageProvider {
     const result = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
     if (!result.Body) throw new Error(`Object ${key} has no body`);
     return result.Body.transformToByteArray();
+  }
+
+  async write(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: bytes,
+        ContentType: contentType,
+        ContentLength: bytes.length,
+      }),
+    );
   }
 
   async delete(key: string): Promise<void> {

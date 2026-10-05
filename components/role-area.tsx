@@ -6,6 +6,7 @@ import { UserMenu } from "@/components/user-menu";
 import { HOME_PATH } from "@/lib/auth/routes";
 import type { SessionUser } from "@/lib/auth/session";
 import { getOwnAvatarUrl } from "@/lib/profile";
+import { cn } from "@/lib/utils";
 
 const ROLE_LABEL = {
   USER: "Author",
@@ -26,6 +27,7 @@ export async function RoleArea({
   eyebrow,
   actions,
   current,
+  wide = false,
   children,
 }: {
   user: SessionUser;
@@ -36,6 +38,8 @@ export async function RoleArea({
   /** Buttons shown beside the title. */
   actions?: React.ReactNode;
   current?: string;
+  /** A wider page, for side-by-side layouts such as the review workspace. */
+  wide?: boolean;
   children?: React.ReactNode;
 }) {
   const nav = navFor(user.role, current);
@@ -44,7 +48,12 @@ export async function RoleArea({
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="bg-panel text-panel-foreground border-border sticky top-0 z-40 border-b">
-        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-4 px-4 sm:px-6">
+        <div
+          className={cn(
+            "mx-auto flex h-16 items-center justify-between gap-4 px-4 sm:px-6",
+            wide ? "max-w-7xl" : "max-w-5xl",
+          )}
+        >
           <div className="flex min-w-0 items-center gap-8">
             <Brand href={HOME_PATH[user.role]} onPanel />
             <nav aria-label="Main" className="hidden items-center gap-1 text-sm md:flex">
@@ -76,7 +85,12 @@ export async function RoleArea({
         </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10 sm:px-6 sm:py-14">
+      <main
+        className={cn(
+          "mx-auto w-full flex-1 px-4 py-10 sm:px-6 sm:py-14",
+          wide ? "max-w-7xl" : "max-w-5xl",
+        )}
+      >
         <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
           <div className="max-w-2xl min-w-0 space-y-2">
             {eyebrow && <div className="text-muted-foreground text-sm">{eyebrow}</div>}
@@ -104,17 +118,5 @@ function NavLink({ href, label, current }: { href: string; label: string; curren
     >
       {label}
     </Link>
-  );
-}
-
-/** A dashed panel for a part of the product that is not built yet. */
-export function ComingSoon({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="border-border rounded-2xl border border-dashed px-6 py-14 text-center">
-      <p className="font-heading text-xl font-medium">{title}</p>
-      <p className="text-muted-foreground mx-auto mt-2 max-w-md text-sm leading-relaxed text-pretty">
-        {children}
-      </p>
-    </div>
   );
 }

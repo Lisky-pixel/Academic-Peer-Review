@@ -9,6 +9,13 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
+    // One file at a time. The *.db.test.ts files share one real database and
+    // delete the accounts they create; run in parallel, one file's cleanup
+    // removes an administrator at the moment another file's submission is
+    // notifying "every administrator", and the insert fails on a foreign key.
+    // That cannot happen in the application, which never deletes active
+    // users — it is purely an artefact of concurrent test cleanup.
+    fileParallelism: false,
     include: ["**/*.{test,spec}.{ts,tsx}"],
     // e2e/ belongs to Playwright — Vitest must not try to run those files.
     exclude: ["node_modules/**", ".next/**", "e2e/**"],
