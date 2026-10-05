@@ -94,3 +94,14 @@ e2e/                 Playwright specs
    first. `toUserSubmissionDTO()` has no reviewer field in its return type, which
    is what makes an anonymity leak a compile error instead of a production
    incident.
+
+## Documentation map
+
+| File                   | What it holds                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------- |
+| `CLAUDE.md`            | Current status, settled decisions, and environment gotchas. Loaded automatically by Claude Code |
+| `docs/PLAN.md`         | The full 10-phase implementation plan and the end-to-end verification checklist                 |
+| `prisma/schema.prisma` | The data model, with the reasoning for each invariant in comments                               |
+
+Git history is intentionally verbose: each commit message explains _why_, not
+just what. `git log` is the third place to look.
