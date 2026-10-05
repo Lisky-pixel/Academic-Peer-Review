@@ -5,11 +5,20 @@ import HomePage from "./page";
 // Toolchain smoke test: proves jsdom, React 19 rendering, TSX compilation and
 // the "@/" path alias all work before any real feature depends on them.
 describe("HomePage", () => {
-  it("renders the product name and the pipeline steps", () => {
+  it("renders the headline, the five steps and the ways in", () => {
     render(<HomePage />);
 
-    expect(screen.getByRole("heading", { level: 1, name: "ReviewFlow" })).toBeInTheDocument();
-    expect(screen.getByText("assigns a reviewer")).toBeInTheDocument();
-    expect(screen.getAllByRole("listitem")).not.toHaveLength(0);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      "Have your writing read properly before it counts.",
+    );
+    expect(screen.getByText("We match a reviewer")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Sign in" })[0]).toHaveAttribute("href", "/login");
+    expect(screen.getAllByRole("link", { name: /Get started/ })[0]).toHaveAttribute(
+      "href",
+      "/register",
+    );
+    expect(
+      screen.getByRole("button", { name: "Switch between light and dark theme" }),
+    ).toBeInTheDocument();
   });
 });

@@ -2,10 +2,32 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/*
+ * dark: applies when the visitor chose dark with the switch (.dark on <html>),
+ * or made no choice and their operating system is dark. An explicit .light
+ * always wins. The class is rendered by the server from a cookie, so there is
+ * no script and no flash of the wrong theme.
+ */
+@custom-variant dark {
+  &:where(.dark, .dark *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not(.light), :root:not(.light) *) {
+      @slot;
+    }
+  }
+}
 
 @theme inline {
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-serif), Georgia, "Times New Roman", serif;
+  --color-mark: var(--mark);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-panel: var(--panel);
+  --color-panel-foreground: var(--panel-foreground);
+  --color-panel-muted: var(--panel-muted);
+  --color-panel-mark: var(--panel-mark);
   --font-sans: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -47,73 +69,69 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+ * Ink and Cobalt.
+ *
+ * Navy ink on cool paper, with a brighter blue (--mark) from the same family
+ * for links, highlights and the brand mark. --mark is not a button colour:
+ * buttons are ink, so the brighter blue keeps meaning "this is a link or an
+ * annotation". --panel is the solid ink surface behind the brand side of the
+ * auth pages and the app header; --panel-mark is the blue that reads on it.
+ *
+ * Note that shadcn's --accent is a neutral hover background, not a brand
+ * colour. The brand accent here is --mark.
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Follows the operating system unless .light or .dark is set on <html>,
+     which the theme switch does. Every colour below is light-dark(light, dark). */
+  color-scheme: light dark;
+  --background: light-dark(#f5f6f9, #0d121c);
+  --foreground: light-dark(#131a2a, #e8ecf3);
+  --card: light-dark(#ffffff, #151c29);
+  --card-foreground: light-dark(#131a2a, #e8ecf3);
+  --popover: light-dark(#ffffff, #151c29);
+  --popover-foreground: light-dark(#131a2a, #e8ecf3);
+  --primary: light-dark(#1b2a4a, #d6e0f5);
+  --primary-foreground: light-dark(#ffffff, #101828);
+  --secondary: light-dark(#e8ecf3, #1e2738);
+  --secondary-foreground: light-dark(#1b2a4a, #e8ecf3);
+  --muted: light-dark(#eceff4, #1a2231);
+  --muted-foreground: light-dark(#596376, #93a0b6);
+  --accent: light-dark(#e8ecf3, #1e2738);
+  --accent-foreground: light-dark(#1b2a4a, #e8ecf3);
+  --destructive: light-dark(#b3261e, #f2867d);
+  --border: light-dark(#dbe0e8, #273146);
+  --input: light-dark(#c9d0dc, #35415a);
+  --ring: light-dark(#5b6f9c, #7f93bd);
+  --mark: light-dark(#2b5cd9, #8eacff);
+  --success: light-dark(#1c7a4a, #6fd3a0);
+  --warning: light-dark(#946200, #e8b84a);
+  --panel: light-dark(#1b2a4a, #151c29);
+  --panel-foreground: light-dark(#ffffff, #e8ecf3);
+  --panel-muted: light-dark(#b4c0d9, #93a0b6);
+  --panel-mark: #8eacff;
+  --chart-1: light-dark(#1b2a4a, #d6e0f5);
+  --chart-2: light-dark(#2b5cd9, #8eacff);
+  --chart-3: light-dark(#5b6f9c, #7f93bd);
+  --chart-4: light-dark(#1c7a4a, #6fd3a0);
+  --chart-5: light-dark(#946200, #e8b84a);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: light-dark(#ffffff, #151c29);
+  --sidebar-foreground: light-dark(#131a2a, #e8ecf3);
+  --sidebar-primary: light-dark(#1b2a4a, #d6e0f5);
+  --sidebar-primary-foreground: light-dark(#ffffff, #101828);
+  --sidebar-accent: light-dark(#e8ecf3, #1e2738);
+  --sidebar-accent-foreground: light-dark(#1b2a4a, #e8ecf3);
+  --sidebar-border: light-dark(#dbe0e8, #273146);
+  --sidebar-ring: light-dark(#5b6f9c, #7f93bd);
+}
+
+.light {
+  color-scheme: light;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  color-scheme: dark;
 }
 
 @layer base {
@@ -125,5 +143,8 @@
   }
   html {
     @apply font-sans;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--mark) 22%, transparent);
   }
 }
