@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { Brand } from "@/components/brand";
 import { navFor } from "@/components/nav";
+import { NotificationBell } from "@/components/notification-bell";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/user-menu";
 import { HOME_PATH } from "@/lib/auth/routes";
 import type { SessionUser } from "@/lib/auth/session";
+import { toBellDTO } from "@/lib/dto/notification";
+import { findBellNotifications } from "@/lib/notifications";
 import { getOwnAvatarUrl } from "@/lib/profile";
 import { cn } from "@/lib/utils";
 
@@ -43,7 +46,10 @@ export async function RoleArea({
   children?: React.ReactNode;
 }) {
   const nav = navFor(user.role, current);
-  const avatarUrl = await getOwnAvatarUrl(user.id);
+  const [avatarUrl, bell] = await Promise.all([
+    getOwnAvatarUrl(user.id),
+    findBellNotifications(user.id).then(toBellDTO),
+  ]);
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -65,6 +71,7 @@ export async function RoleArea({
 
           <div className="flex items-center gap-2 sm:gap-3">
             <ThemeToggle />
+            <NotificationBell bell={bell} />
             <UserMenu
               name={user.name}
               email={user.email}

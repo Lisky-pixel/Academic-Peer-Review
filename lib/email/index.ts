@@ -1,13 +1,22 @@
 import nodemailer from "nodemailer";
+import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 
 /**
- * Outbound email.
+ * Outbound email: the transport.
  *
- * Callers use `sendEmail` and never learn which provider is behind it: Mailpit
- * over SMTP in development, Resend in production. This is the minimal transport
- * the auth flows need; templates, EmailLog persistence and retry arrive with
- * the notification phase and slot in behind the same function.
+ * Callers never learn which provider is behind it — Mailpit over SMTP in
+ * development, Resend in production. The sender is always the platform's own
+ * address (EMAIL_FROM). No email is ever sent "from" a reviewer or an
+ * administrator, which is part of how reviewer anonymity is kept.
+ *
+ * There are two ways mail leaves the application:
+ *
+ *   - `sendEmail`, here: account emails (password reset, invitation, email
+ *     verification). Sent at once, logged without their body, never retried —
+ *     they contain a secret link, and the person can simply ask again.
+ *   - the outbox in lib/email/outbox.ts: workflow notifications, queued in the
+ *     same transaction as the event that caused them, and retried on failure.
  */
 
 export type EmailMessage = {
@@ -18,7 +27,8 @@ export type EmailMessage = {
 };
 
 interface EmailProvider {
-  send(message: EmailMessage): Promise<void>;
+  /** Sends one message and returns the provider's id for it, if it gives one. */
+  send(message: EmailMessage): Promise<string | undefined>;
 }
 
 class SmtpProvider implements EmailProvider {
@@ -28,17 +38,18 @@ class SmtpProvider implements EmailProvider {
     secure: env.SMTP_SECURE,
   });
 
-  async send(message: EmailMessage): Promise<void> {
-    await this.transport.sendMail({
+  async send(message: EmailMessage): Promise<string | undefined> {
+    const info = await this.transport.sendMail({
       from: env.EMAIL_FROM,
       replyTo: env.EMAIL_REPLY_TO || undefined,
       ...message,
     });
+    return typeof info.messageId === "string" ? info.messageId : undefined;
   }
 }
 
 class ResendProvider implements EmailProvider {
-  async send(message: EmailMessage): Promise<void> {
+  async send(message: EmailMessage): Promise<string | undefined> {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -58,12 +69,52 @@ class ResendProvider implements EmailProvider {
     if (!response.ok) {
       throw new Error(`Resend rejected the message: ${response.status} ${await response.text()}`);
     }
+    const body = (await response.json().catch(() => null)) as { id?: unknown } | null;
+    return typeof body?.id === "string" ? body.id : undefined;
   }
 }
 
 let provider: EmailProvider | undefined;
 
-export function sendEmail(message: EmailMessage): Promise<void> {
+/** Hands a message to the provider. Throws if the provider refuses it. */
+export function deliver(message: EmailMessage): Promise<string | undefined> {
   provider ??= env.EMAIL_PROVIDER === "resend" ? new ResendProvider() : new SmtpProvider();
   return provider.send(message);
+}
+
+/**
+ * Sends an account email now, and records that it was sent.
+ *
+ * The log row has the recipient, the kind of email and the outcome — never the
+ * body, because the body contains a single-use secret link and the database
+ * stores only hashes of those.
+ */
+export async function sendEmail(
+  message: EmailMessage,
+  template: string = "account",
+): Promise<void> {
+  const record = (status: "SENT" | "FAILED", providerId?: string, error?: string) =>
+    db.emailLog
+      .create({
+        data: {
+          toEmail: message.to,
+          template,
+          subject: message.subject,
+          status,
+          attempts: 1,
+          providerId: providerId ?? null,
+          error: error?.slice(0, 500) ?? null,
+          sentAt: status === "SENT" ? new Date() : null,
+        },
+      })
+      // A failed log write must not turn a sent email into an error.
+      .catch((logError) => console.error("Could not write the email log", logError));
+
+  try {
+    const providerId = await deliver(message);
+    await record("SENT", providerId);
+  } catch (error) {
+    await record("FAILED", undefined, error instanceof Error ? error.message : String(error));
+    throw error;
+  }
 }

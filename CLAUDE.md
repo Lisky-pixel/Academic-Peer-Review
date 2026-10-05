@@ -10,9 +10,9 @@ plan and the verification checklist.
 
 ## Status
 
-Phases 0–7 are complete and verified: the whole workflow runs end to end,
-from submission to the author reading their review. Next is Phase 8
-(notifications: email, the in-app bell, reminders, the maintenance job).
+Phases 0–8 are complete and verified: the whole workflow runs end to end,
+and every step notifies the right people in the app and by email. Next is
+Phase 9 (dashboards and admin management).
 
 Phases 3–4 (storage and submissions):
 
@@ -89,14 +89,48 @@ Phase 7 (approval and delivery), in `lib/approvals`:
 - `components/document-pane.tsx` and `components/review-answers.tsx` are
   shared by reviewer, admin and author views.
 
+Phase 8 (notifications):
+
+- **Two kinds of email, on purpose.** Workflow notifications go through the
+  outbox: `queueNotices(tx, …)` (`lib/notifications`) writes the
+  `Notification` row and a `QUEUED` `EmailLog` row with its content, inside
+  the transaction of the event. Account emails (reset, invite, verification)
+  use `sendEmail` directly and are logged **without** a body, because the
+  body holds a secret link; they are never retried.
+- `lib/email/outbox.ts` `dispatchQueuedEmails` sends the queue, claiming each
+  row with a conditional update so concurrent runs never double-send, with
+  back-off and a cap of five attempts. `transition()` kicks it after commit
+  (via `after()`); it does nothing when `NODE_ENV` is `test`.
+- **All wording lives in `lib/notifications/messages.ts`.** Author-facing
+  builders take only `{ id, reference, title }`, so they cannot name a
+  reviewer. Add new notifications there, not inline.
+- One layout, `lib/email/template.tsx` (react-email). Preview every email at
+  `/dev/emails` (development only).
+- The bell (`components/notification-bell.tsx`) is rendered by `RoleArea`.
+  Opening a notification goes through a server action that looks the link up
+  for the signed-in user; the browser is never given a URL to trust.
+- `lib/maintenance` `runMaintenance` is the scheduled job: deadline
+  reminders (once per assignment), overdue escalation to admins (once per
+  assignment per admin), email retry, and clean-up of sessions, rate limits,
+  dead tokens and stale registrations. It is exposed at
+  `/api/cron/maintenance`, which requires `Authorization: Bearer $CRON_SECRET`
+  and is scheduled daily in `vercel.json`.
+- Functions that scan the whole database (`dispatchQueuedEmails`,
+  `sendDeadlineReminders`, `escalateOverdueReviews`) take an optional scope so
+  tests touch only their own rows. Always pass one in a test.
+
 Known limits, deliberately left:
 
 - Hiding the author hides their name and filename, **not** what is inside
   their document or its metadata. A CV names its author regardless.
 - Scrubbing removes metadata, not a name a reviewer types into a comment.
   The admin reads every review before release and is the check on that.
-- Nobody is emailed about anything yet: every notification is an in-app row
-  that no page displays. That is Phase 8.
+- The schedule is once a day (the limit on Vercel's free plan), so a reminder
+  can be up to a day late and failed mail is retried at most daily unless
+  another event queues mail first.
+- The bell shows what was true when the page loaded; it does not update live.
+- Orphaned uploads (prepared, never confirmed) are not yet cleaned from
+  storage.
 - **Production needs a CORS rule on the R2 bucket** allowing `PUT` from the
   app origin with the `Content-Type` header. MinIO allows all origins by
   default, so this does not show up in development.
@@ -118,13 +152,9 @@ Phase 2 (auth) lives in `lib/auth/`, `lib/rate-limit/`, `app/(auth)/` and
   link. Never make `/register` respond differently for a taken address.
 - `/admin/invites` sends, resends and cancels invitations. Full user
   management is still Phase 9.
-- `lib/email` is a minimal transport; templates, `EmailLog` and retry are
-  Phase 8. Its Resend branch is pinned by `email.test.ts` against a mocked
-  `fetch` but has never been run against the live API — do one real send
-  when the key and domain exist.
-- No scheduled job exists yet (Phase 8). When it does it must call
-  `deleteExpiredSessions`, `deleteExpiredRateLimits` and
-  `deleteStaleUnverifiedUsers`.
+- The Resend branch of `lib/email` is pinned by `email.test.ts` against a
+  mocked `fetch` but has **never been run against the live API** — do one
+  real send when the key and domain exist.
 
 ## Two rules that must not be broken
 

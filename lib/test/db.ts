@@ -78,8 +78,38 @@ export async function purgeUsers(userIds: string[]): Promise<void> {
   });
   const submissionIds = submissions.map((submission) => submission.id);
 
+  // Queued email for these accounts. Left behind, it would be picked up and
+  // sent by the development server the next time it dispatches mail.
+  const users = await db.user.findMany({
+    where: { id: { in: userIds } },
+    select: { email: true },
+  });
+  await db.emailLog.deleteMany({
+    where: {
+      OR: [
+        { submissionId: { in: submissionIds } },
+        { toEmail: { in: users.map((user) => user.email) } },
+      ],
+    },
+  });
+
   await db.activityLog.deleteMany({ where: { entityId: { in: [...userIds, ...submissionIds] } } });
   await db.notification.deleteMany({ where: { submissionId: { in: submissionIds } } });
+  // Reviews hang off assignments, and decisions off reviews. A reviewer or an
+  // administrator being purged may have these on submissions that are staying,
+  // so match on the person as well as on the submission.
+  const reviewScope = {
+    OR: [
+      { submissionId: { in: submissionIds } },
+      { assignment: { reviewerId: { in: userIds } } },
+      { assignment: { assignedById: { in: userIds } } },
+    ],
+  };
+  await db.adminDecision.deleteMany({
+    where: { OR: [{ adminId: { in: userIds } }, { review: reviewScope }] },
+  });
+  // Responses cascade with their review.
+  await db.review.deleteMany({ where: reviewScope });
   await db.assignment.deleteMany({
     where: {
       OR: [

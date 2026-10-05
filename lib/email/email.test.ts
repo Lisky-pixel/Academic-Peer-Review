@@ -28,13 +28,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("sendEmail via Resend", () => {
+describe("delivering via Resend", () => {
   it("posts the message to the Resend API with the key as a bearer token", async () => {
     const fetchMock = vi.fn(async () => Response.json({ id: "abc" }));
     vi.stubGlobal("fetch", fetchMock);
-    const { sendEmail } = await loadWithResend();
+    const { deliver } = await loadWithResend();
 
-    await sendEmail(MESSAGE);
+    await deliver(MESSAGE);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -57,9 +57,9 @@ describe("sendEmail via Resend", () => {
       "fetch",
       vi.fn(async () => new Response('{"message":"domain is not verified"}', { status: 403 })),
     );
-    const { sendEmail } = await loadWithResend();
+    const { deliver } = await loadWithResend();
 
-    await expect(sendEmail(MESSAGE)).rejects.toThrow(/403.*domain is not verified/);
+    await expect(deliver(MESSAGE)).rejects.toThrow(/403.*domain is not verified/);
   });
 
   it("never puts the API key in the error it throws", async () => {
@@ -67,9 +67,9 @@ describe("sendEmail via Resend", () => {
       "fetch",
       vi.fn(async () => new Response("nope", { status: 401 })),
     );
-    const { sendEmail } = await loadWithResend();
+    const { deliver } = await loadWithResend();
 
-    const error = await sendEmail(MESSAGE).catch((e: Error) => e);
+    const error = await deliver(MESSAGE).catch((e: Error) => e);
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).not.toContain("re_test_key");
   });

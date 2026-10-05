@@ -510,10 +510,20 @@ model EmailLog {
   error      String?
   attempts   Int         @default(0)
 
+  /// What to render and send: the subject is above, this is the body content
+  /// (heading, paragraphs, button). Present on workflow notifications, which
+  /// can be retried. Null on account emails (reset, invite, verification):
+  /// those contain a secret link, are sent once and immediately, and must not
+  /// leave a usable copy of that link in the database.
+  payload       Json?
+  /// Earliest time the next attempt may run. Doubles as a short lease while a
+  /// send is in progress, so two workers never send the same message.
+  nextAttemptAt DateTime?
+
   createdAt DateTime  @default(now())
   sentAt    DateTime?
 
-  @@index([status, createdAt])
+  @@index([status, nextAttemptAt])
   @@index([submissionId])
 }
 

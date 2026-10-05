@@ -465,8 +465,13 @@ describe.skipIf(!storageAvailable)("anonymity: what the author finally receives"
     const notifications = await db.notification.findMany({
       where: { submissionId: id, userId: author.id },
     });
-    const everything = JSON.stringify({ review, submission, notifications });
+    // Every email queued for the author across the whole journey, bodies included.
+    const emails = await db.emailLog.findMany({ where: { toEmail: author.email } });
+    const everything = JSON.stringify({ review, submission, notifications, emails });
 
+    expect(emails.map((email) => email.template)).toEqual(
+      expect.arrayContaining(["SUBMISSION_RECEIVED", "SUBMISSION_STATUS_CHANGED", "REVIEW_READY"]),
+    );
     expect(review.reviewer).toBe("Anonymous");
     for (const secret of [
       REVIEWER_NAME,

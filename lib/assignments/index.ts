@@ -1,6 +1,9 @@
 import type { SessionUser } from "@/lib/auth/session";
 import { db } from "@/lib/db";
+import { formatDate } from "@/lib/format";
 import type { Prisma, SubmissionStatus } from "@/lib/generated/prisma/client";
+import { type Notice, queueNotices } from "@/lib/notifications";
+import { type SubmissionRef, toReviewer } from "@/lib/notifications/messages";
 import { storage } from "@/lib/storage";
 import { transition, type TransitionFailure } from "@/lib/workflow/state-machine";
 
@@ -144,21 +147,16 @@ async function isAvailableReviewer(reviewerId: string): Promise<boolean> {
 }
 
 /**
- * What a reviewer is told about new work. Says only the reference: whether
- * they may know who wrote it is decided by `authorVisibleToReviewer`, and
- * that is resolved in `toReviewerSubmissionDTO()`, not in a notification.
+ * Tells a reviewer about new work, in the bell and by email. The message is
+ * built from the reference and title alone: whether they may know who wrote
+ * it is decided by `authorVisibleToReviewer`, which is resolved in
+ * `toReviewerSubmissionDTO()` and nowhere else.
  */
-function reviewerNotice(
-  reviewerId: string,
-  submission: { id: string; reference: string },
-): Prisma.NotificationCreateManyInput {
+function assignmentNotice(reviewerId: string, ref: SubmissionRef, dueAt: Date | null): Notice {
   return {
     userId: reviewerId,
-    type: "ASSIGNMENT_RECEIVED",
-    title: "New document to review",
-    body: `${submission.reference} has been assigned to you.`,
-    submissionId: submission.id,
-    linkUrl: "/reviewer",
+    submissionId: ref.id,
+    message: toReviewer.assignmentReceived(ref, dueAt ? formatDate(dueAt) : null),
   };
 }
 
@@ -174,13 +172,14 @@ type AssignInput = {
 async function resolveDueAt(
   submissionId: string,
   dueAt: Date | null | undefined,
-): Promise<{ ok: true; dueAt: Date | null; reference: string } | { ok: false }> {
+): Promise<{ ok: true; dueAt: Date | null; ref: SubmissionRef } | { ok: false }> {
   const submission = await db.submission.findUnique({
     where: { id: submissionId },
-    select: { deadline: true, reference: true },
+    select: { id: true, deadline: true, reference: true, title: true },
   });
   if (!submission) return { ok: false };
-  return { ok: true, dueAt: dueAt ?? submission.deadline, reference: submission.reference };
+  const { deadline, ...ref } = submission;
+  return { ok: true, dueAt: dueAt ?? deadline, ref };
 }
 
 /** Gives an unassigned submission to a reviewer. */
@@ -211,9 +210,7 @@ export async function assignReviewer(input: AssignInput): Promise<AssignResult> 
           dueAt: resolved.dueAt,
         },
       });
-      await tx.notification.create({
-        data: reviewerNotice(reviewerId, { id: submissionId, reference: resolved.reference }),
-      });
+      await queueNotices(tx, [assignmentNotice(reviewerId, resolved.ref, resolved.dueAt)]);
     },
   });
 
@@ -276,19 +273,14 @@ export async function reassignReviewer(
           dueAt: resolved.dueAt,
         },
       });
-      await tx.notification.createMany({
-        data: [
-          ...retired.map((assignment) => ({
-            userId: assignment.reviewerId,
-            type: "ASSIGNMENT_CANCELLED" as const,
-            title: "Assignment withdrawn",
-            body: `${resolved.reference} has been given to another reviewer.`,
-            submissionId,
-            linkUrl: "/reviewer",
-          })),
-          reviewerNotice(reviewerId, { id: submissionId, reference: resolved.reference }),
-        ],
-      });
+      await queueNotices(tx, [
+        ...retired.map((assignment) => ({
+          userId: assignment.reviewerId,
+          submissionId,
+          message: toReviewer.assignmentCancelled(resolved.ref),
+        })),
+        assignmentNotice(reviewerId, resolved.ref, resolved.dueAt),
+      ]);
     },
   });
 

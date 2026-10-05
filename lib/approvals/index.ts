@@ -1,6 +1,8 @@
 import type { SessionUser } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/lib/generated/prisma/client";
+import { queueNotices } from "@/lib/notifications";
+import { toReviewer } from "@/lib/notifications/messages";
 import { type DocumentPreview, previewOf } from "@/lib/reviews/preview";
 import { storage } from "@/lib/storage";
 import { SYSTEM_ACTOR, transition, type TransitionFailure } from "@/lib/workflow/state-machine";
@@ -25,6 +27,7 @@ const CRITERIA = {
 const ADMIN_REVIEW_SELECT = {
   id: true,
   reference: true,
+  title: true,
   status: true,
   files: {
     orderBy: { createdAt: "desc" },
@@ -190,16 +193,19 @@ export async function requestRevision(
         where: { id: review.id },
         data: { status: "DRAFT", revisionRound: { increment: 1 } },
       });
-      await tx.notification.create({
-        data: {
+      // The note itself is not in the notification: it is shown in the
+      // workspace, where only the reviewer who holds the submission can read it.
+      await queueNotices(tx, [
+        {
           userId: assignment.reviewerId,
-          type: "REVISION_REQUESTED",
-          title: "Changes requested on your review",
-          body: `The administrator has asked for changes to your review of ${record.reference}.`,
           submissionId,
-          linkUrl: `/reviewer/reviews/${submissionId}`,
+          message: toReviewer.revisionRequested({
+            id: record.id,
+            reference: record.reference,
+            title: record.title,
+          }),
         },
-      });
+      ]);
     },
   });
   return result.ok ? { ok: true } : result;

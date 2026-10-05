@@ -48,6 +48,8 @@ async function emailedLink(
   request: APIRequestContext,
   to: string,
   kind: "reset-password" | "verify-email" | "invite",
+  /** Wait until at least this many emails of any kind have reached the address. */
+  atLeast = 1,
 ): Promise<string> {
   let link: string | undefined;
   await expect(async () => {
@@ -55,6 +57,10 @@ async function emailedLink(
       params: { query: `to:${to}` },
     });
     const { messages } = await search.json();
+    expect(messages.length, `fewer than ${atLeast} emails for ${to} yet`).toBeGreaterThanOrEqual(
+      atLeast,
+    );
+    link = undefined;
     for (const { ID } of messages) {
       const message = await (await request.get(`${MAILPIT}/api/v1/message/${ID}`)).json();
       link = new RegExp(`https?://\\S+/${kind}/\\S+`).exec(message.Text)?.[0];
@@ -157,7 +163,9 @@ test("registering needs the emailed link and the password before anything is act
   await login(page, email, "a wrong guess");
   await expect(page.getByText("Invalid email or password.")).toBeVisible();
 
-  const link = await emailedLink(request, email, "verify-email");
+  // Signing in while unconfirmed sent a second link, which replaces the first.
+  // Wait for it, or this could pick up the first one just before it dies.
+  const link = await emailedLink(request, email, "verify-email", 2);
   await page.goto(link);
   await page.getByLabel("Password").fill("not what I signed up with");
   await page.getByRole("button", { name: "Confirm and sign in" }).click();
@@ -1084,4 +1092,112 @@ test("an author cannot see a review, or its file, before it is approved", async 
   const id = authorUrl.split("/").pop();
   expect((await page.request.get(`/reviewer/reviews/${id}/annotated`)).status()).toBe(404);
   expect((await page.request.get(`/admin/submissions/${id}/annotated`)).status()).toBe(404);
+});
+
+/** The newest email to an address whose subject contains `subject`, from Mailpit. */
+async function emailTo(request: APIRequestContext, to: string, subject: string) {
+  let found: { Subject: string; Text: string; HTML: string; From: { Address: string } } | undefined;
+  await expect(async () => {
+    const search = await request.get(`${MAILPIT}/api/v1/search`, {
+      params: { query: `to:${to} subject:"${subject}"` },
+    });
+    const id = (await search.json()).messages[0]?.ID;
+    expect(id, `no "${subject}" email for ${to} yet`).toBeTruthy();
+    found = await (await request.get(`${MAILPIT}/api/v1/message/${id}`)).json();
+  }).toPass({ timeout: 20_000 });
+  return found!;
+}
+
+test("each step of the workflow emails the right person, and the bell leads to it", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(180_000);
+  const title = `Notified ${randomUUID().slice(0, 8)}`;
+  const authorEmail = freshEmail("notified");
+  const authorUrl = await submitAndAssign(
+    page,
+    request,
+    title,
+    "reviewer1@reviewflow.local",
+    authorEmail,
+  );
+  const submissionId = authorUrl.split("/").pop()!;
+
+  // Submitting and assigning have each produced mail.
+  const received = await emailTo(request, authorEmail, "We have your submission");
+  expect(received.Text).toContain(title);
+  expect(received.Text).toContain(`/dashboard/submissions/${submissionId}`);
+  await emailTo(request, authorEmail, "A reviewer has been assigned");
+  await emailTo(request, "admin@reviewflow.local", "New submission needs a reviewer");
+  const assigned = await emailTo(request, "reviewer1@reviewflow.local", "New document to review");
+  expect(assigned.Text).toContain(title);
+  expect(assigned.Text).toContain(`/reviewer/reviews/${submissionId}`);
+  // The reviewer is told what to review, not who wrote it.
+  expect(assigned.Text).not.toContain("E2E Person");
+  expect(assigned.Text).not.toContain(authorEmail);
+
+  // The reviewer has an unread notification, and it opens the assignment.
+  await login(page, "reviewer1@reviewflow.local");
+  await expect(page).toHaveURL(/\/reviewer$/);
+  await page.getByRole("button", { name: /^Notifications, \d+ unread$/ }).click();
+  await page
+    .getByRole("menuitem", { name: /New document to review/ })
+    .first()
+    .click();
+  await expect(page).toHaveURL(new RegExp(`/reviewer/reviews/${submissionId}$`));
+
+  await page.goto("/reviewer");
+  await completeReview(page, title, "Clear and specific throughout.");
+  await signOut(page);
+  await emailTo(request, "admin@reviewflow.local", "Review ready for approval");
+
+  // The admin approves; the author is emailed that it is ready.
+  await login(page, "admin@reviewflow.local");
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.goto(`/admin/submissions/${submissionId}`);
+  await page.getByRole("button", { name: /Approve and release/ }).click();
+  await expect(page.getByText("Approved", { exact: true }).first()).toBeVisible();
+  await signOut(page);
+
+  const ready = await emailTo(request, authorEmail, "Your review is ready");
+  expect(ready.Text).toContain(`/dashboard/submissions/${submissionId}`);
+  // Sent by the platform, and naming nobody.
+  expect(ready.From.Address).toBe("noreply@localhost");
+  for (const secret of ["Rita Reviewer", "reviewer1@reviewflow.local", "Ada Admin", E2E_REVIEWER]) {
+    expect(ready.Text).not.toContain(secret);
+    expect(ready.HTML).not.toContain(secret);
+  }
+
+  // The author follows the bell to the review, and the count clears.
+  await login(page, authorEmail);
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.getByRole("button", { name: /^Notifications, 3 unread$/ }).click();
+  await page.getByRole("menuitem", { name: /Your review is ready/ }).click();
+  await expect(page).toHaveURL(authorUrl);
+  await expect(page.getByRole("heading", { name: "Your review" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Notifications, 2 unread" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Notifications, 2 unread" }).click();
+  await page.getByRole("button", { name: "Mark all as read" }).click();
+  // While the menu is open the rest of the page is hidden from assistive
+  // technology, the bell included, so close it before reading the bell.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Notifications", exact: true })).toBeVisible();
+});
+
+test("the maintenance endpoint is closed to anyone without the secret", async ({ request }) => {
+  expect((await request.get("/api/cron/maintenance")).status()).toBe(401);
+  expect(
+    (
+      await request.get("/api/cron/maintenance", {
+        headers: { authorization: "Bearer a-guess" },
+      })
+    ).status(),
+  ).toBe(401);
+});
+
+test("the email preview page exists in development", async ({ page }) => {
+  await page.goto("/dev/emails?t=review-ready");
+  await expect(page.getByText("Your review is ready (RF-2026-0147)")).toBeVisible();
 });
