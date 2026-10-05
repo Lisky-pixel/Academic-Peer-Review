@@ -730,8 +730,9 @@ async function submitAndAssign(
   request: APIRequestContext,
   title: string,
   reviewerEmail: string,
+  authorEmail = freshEmail("flow"),
 ) {
-  await registerAndConfirm(page, request, freshEmail("flow"));
+  await registerAndConfirm(page, request, authorEmail);
   await startDraft(page, title);
   await page
     .getByLabel("Choose your document")
@@ -900,4 +901,187 @@ test("a reviewer declines with a reason and the admin sees it back in the queue"
   await expect(page.getByRole("heading", { name: "Assign a reviewer" })).toBeVisible();
   await expect(page.getByText("Previously with")).toBeVisible();
   await expect(page.getByText("Away that week.").first()).toBeVisible();
+});
+
+/** As the signed-in reviewer: accept, answer everything, attach a file, submit. */
+async function completeReview(page: Page, title: string, feedback: string) {
+  await page.getByRole("link", { name: new RegExp(title) }).click();
+  await page.getByRole("button", { name: "Accept assignment" }).click();
+  await expect(page.getByRole("heading", { name: "Your review" })).toBeVisible();
+
+  const groups = page.getByRole("radiogroup");
+  const count = await groups.count();
+  for (let i = 0; i < count; i++) {
+    await groups.nth(i).locator("label").nth(3).click();
+  }
+  await page.getByLabel("Overall feedback comments").fill(feedback);
+  await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 15_000 });
+
+  await page.getByLabel("Choose your annotated copy").setInputFiles({
+    name: `${E2E_REVIEWER} notes.docx`,
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer: await annotatedDocx(),
+  });
+  await expect(page.getByText(/RF-\d{4}-\d+-reviewed\.docx/)).toBeVisible({ timeout: 20_000 });
+
+  await page.getByRole("button", { name: "Submit review" }).click();
+  await expect(page.getByText(/An administrator will read it/)).toBeVisible();
+}
+
+test("the full round trip: review, sent back, revised, approved, and read by the author", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(180_000);
+  const title = `Roundtrip ${randomUUID().slice(0, 8)}`;
+  const authorEmail = freshEmail("roundtrip");
+  const note = "Be specific about the second paragraph.";
+  const firstFeedback = "A strong story overall.";
+  const revisedFeedback = "A strong story. Merge the second and third paragraphs.";
+
+  const authorUrl = await submitAndAssign(
+    page,
+    request,
+    title,
+    "reviewer1@reviewflow.local",
+    authorEmail,
+  );
+
+  // The reviewer writes and submits a first review.
+  await login(page, "reviewer1@reviewflow.local");
+  await expect(page).toHaveURL(/\/reviewer$/);
+  await completeReview(page, title, firstFeedback);
+  await signOut(page);
+
+  // The admin reads it beside both documents and sends it back.
+  await login(page, "admin@reviewflow.local");
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.goto("/admin?view=approval");
+  await page.getByRole("link", { name: new RegExp(title) }).click();
+  await expect(page.getByRole("heading", { name: "The review" })).toBeVisible();
+  await expect(page.getByText(/By Rita Reviewer/)).toBeVisible();
+  await expect(page.getByRole("region", { name: "What the author sent" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "What the author will receive" })).toBeVisible();
+  await expect(page.getByText(firstFeedback)).toBeVisible();
+  // The author's PDF is drawn in the page for the admin too.
+  await expect(page.locator("canvas").first()).toBeVisible({ timeout: 30_000 });
+
+  await page.getByText("Send it back to the reviewer instead").click();
+  await page.getByLabel("What should the reviewer change?").fill(note);
+  await page.getByRole("button", { name: "Request changes" }).click();
+  await expect(page.getByText("Revision requested").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /Approve and release/ })).toHaveCount(0);
+  await signOut(page);
+
+  // The author is told nothing about the bounce.
+  // The reviewer sees the note, revises and resubmits.
+  await login(page, "reviewer1@reviewflow.local");
+  await expect(page).toHaveURL(/\/reviewer$/);
+  await page.goto("/reviewer?tab=active");
+  const queued = page.getByRole("link", { name: new RegExp(title) });
+  await expect(queued).toContainText("Changes requested");
+  await queued.click();
+  await expect(page.getByText("The administrator asked for changes.")).toBeVisible();
+  await expect(page.getByText(note)).toBeVisible();
+  // Their earlier answers are still there to edit.
+  await expect(page.getByLabel("Overall feedback comments")).toHaveValue(firstFeedback);
+  await page.getByLabel("Overall feedback comments").fill(revisedFeedback);
+  await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Resubmit review" }).click();
+  await expect(page.getByText(/An administrator will read it/)).toBeVisible();
+  await signOut(page);
+
+  // The admin approves the revised review.
+  await login(page, "admin@reviewflow.local");
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.goto("/admin?view=approval");
+  await page.getByRole("link", { name: new RegExp(title) }).click();
+  await expect(page.getByText(revisedFeedback)).toBeVisible();
+  await expect(page.getByText(/revision 1/)).toBeVisible();
+  await page.getByRole("button", { name: /Approve and release/ }).click();
+  await expect(page.getByText("Approved", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /Approve and release/ })).toHaveCount(0);
+  await signOut(page);
+
+  // The author finds it ready, reads it, and learns nothing about who wrote it.
+  await login(page, authorEmail);
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByRole("link", { name: new RegExp(title) })).toContainText("Ready to read");
+  await page.goto(authorUrl);
+  await expect(page.getByRole("heading", { name: "Your review" })).toBeVisible();
+  await expect(page.getByText("Reviewer: Anonymous")).toBeVisible();
+  await expect(page.getByText(revisedFeedback)).toBeVisible();
+  await expect(page.getByText("4 of 5").first()).toBeVisible();
+
+  const html = await page.content();
+  for (const secret of [
+    "Rita Reviewer",
+    "reviewer1@reviewflow.local",
+    "Ada Admin",
+    note,
+    firstFeedback,
+    E2E_REVIEWER,
+    "Quillfeather",
+  ]) {
+    expect(html).not.toContain(secret);
+  }
+
+  // The file they download has the reviewer nowhere in it.
+  const download = await page.request.get(`${authorUrl}/reviewed`);
+  expect(download.status()).toBe(200);
+  expect(download.headers()["content-disposition"]).toMatch(/RF-\d{4}-\d+-reviewed\.docx/);
+  const { strFromU8, unzipSync } = await import("fflate");
+  const everything = Object.values(unzipSync(new Uint8Array(await download.body())))
+    .map((part) => strFromU8(part))
+    .join("\n");
+  expect(everything).not.toContain(E2E_REVIEWER);
+  expect(everything).not.toContain("Quillfeather");
+  expect(everything).toContain('w:author="Reviewer"');
+
+  // Having read it, the submission is complete.
+  await page.goto("/dashboard");
+  await expect(page.getByRole("link", { name: new RegExp(title) })).toContainText("Completed");
+  await signOut(page);
+
+  // The admin's trail records the delivery.
+  await login(page, "admin@reviewflow.local");
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.goto("/admin?view=all");
+  await page.getByRole("link", { name: new RegExp(title) }).click();
+  await expect(page.getByText("Delivered to the author")).toBeVisible();
+  await expect(page.getByText("Delivered", { exact: true }).first()).toBeVisible();
+});
+
+test("an author cannot see a review, or its file, before it is approved", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(120_000);
+  const title = `Unapproved ${randomUUID().slice(0, 8)}`;
+  const authorEmail = freshEmail("unapproved");
+  const feedback = "Private until an administrator approves it.";
+  const authorUrl = await submitAndAssign(
+    page,
+    request,
+    title,
+    "reviewer2@reviewflow.local",
+    authorEmail,
+  );
+
+  await login(page, "reviewer2@reviewflow.local");
+  await expect(page).toHaveURL(/\/reviewer$/);
+  await completeReview(page, title, feedback);
+  await signOut(page);
+
+  await login(page, authorEmail);
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto(authorUrl);
+  await expect(page.getByText("Final checks").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your review" })).toHaveCount(0);
+  expect(await page.content()).not.toContain(feedback);
+  expect((await page.request.get(`${authorUrl}/reviewed`)).status()).toBe(404);
+  // And they cannot reach the reviewer's or the admin's copy of it.
+  const id = authorUrl.split("/").pop();
+  expect((await page.request.get(`/reviewer/reviews/${id}/annotated`)).status()).toBe(404);
+  expect((await page.request.get(`/admin/submissions/${id}/annotated`)).status()).toBe(404);
 });

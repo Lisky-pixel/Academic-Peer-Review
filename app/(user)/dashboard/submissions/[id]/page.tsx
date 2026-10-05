@@ -2,13 +2,17 @@ import { Check, Download, FileText, Pencil } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { DeliveryBeacon } from "@/app/(user)/dashboard/submissions/[id]/delivery-beacon";
 import { SubmitPanel, WithdrawPanel } from "@/app/(user)/dashboard/submissions/[id]/submit-panel";
 import { BackLink } from "@/components/back-link";
 import { DocumentUploader } from "@/app/(user)/dashboard/submissions/document-uploader";
+import { ReviewAnswers } from "@/components/review-answers";
 import { RoleArea } from "@/components/role-area";
 import { StatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
+import { findOwnReview } from "@/lib/approvals";
 import { requireRole } from "@/lib/auth/guards";
+import { toUserReviewDTO, type UserReviewDTO } from "@/lib/dto/approval";
 import { toUserSubmissionDTO, type UserSubmissionDTO } from "@/lib/dto/submission";
 import { env } from "@/lib/env";
 import { formatBytes } from "@/lib/files/validate";
@@ -28,6 +32,10 @@ export default async function SubmissionPage({ params }: PageProps<"/dashboard/s
   const record = await findOwnSubmission(user.id, id);
   if (!record) notFound();
   const submission = toUserSubmissionDTO(record);
+
+  // Null until an administrator has approved the review.
+  const reviewRecord = await findOwnReview(user.id, id);
+  const review = reviewRecord ? toUserReviewDTO(reviewRecord) : null;
 
   return (
     <RoleArea
@@ -50,6 +58,8 @@ export default async function SubmissionPage({ params }: PageProps<"/dashboard/s
       ) : (
         <Progress submission={submission} />
       )}
+
+      {review && <ReviewResult submissionId={submission.id} review={review} />}
 
       <Details submission={submission} />
 
@@ -82,6 +92,46 @@ function Panel({
         {action}
       </div>
       {children}
+    </section>
+  );
+}
+
+/** The approved review: the reason the author came. */
+function ReviewResult({ submissionId, review }: { submissionId: string; review: UserReviewDTO }) {
+  return (
+    <section aria-label="Your review" className="space-y-6">
+      <DeliveryBeacon submissionId={submissionId} />
+
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+        <h2 className="font-heading text-2xl font-medium">Your review</h2>
+        <p className="text-muted-foreground text-sm">Reviewer: {review.reviewer}</p>
+      </div>
+
+      {review.reviewedFile && (
+        <div className="border-border bg-card flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-5">
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="bg-mark/10 text-mark flex size-11 shrink-0 items-center justify-center rounded-xl">
+              <FileText aria-hidden className="size-5" strokeWidth={1.75} />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate font-medium">{review.reviewedFile.filename}</span>
+              <span className="text-muted-foreground block text-sm">
+                Your document with the reviewer&apos;s changes and comments ·{" "}
+                {formatBytes(review.reviewedFile.sizeBytes)}
+              </span>
+            </span>
+          </span>
+          <Button asChild size="lg" className="h-10 px-4 text-sm">
+            {/* A plain link: this is a file download, not a page to prefetch. */}
+            <a href={`/dashboard/submissions/${submissionId}/reviewed`}>
+              <Download aria-hidden />
+              Download
+            </a>
+          </Button>
+        </div>
+      )}
+
+      <ReviewAnswers criteria={review.criteria} />
     </section>
   );
 }
@@ -150,7 +200,10 @@ function Progress({ submission }: { submission: UserSubmissionDTO }) {
       </ol>
       {submission.submittedAt && (
         <p className="text-muted-foreground border-border mt-6 border-t pt-5 text-sm">
-          Submitted {formatDate(submission.submittedAt)}. We will let you know as it moves along.
+          Submitted {formatDate(submission.submittedAt)}.{" "}
+          {submission.stage === "ready" || submission.stage === "completed"
+            ? "Your review is below."
+            : "We will let you know as it moves along."}{" "}
           Your reviewer stays anonymous throughout.
         </p>
       )}

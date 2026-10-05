@@ -28,6 +28,7 @@ export type DocumentPreview =
 const MAX_INLINE_BYTES = 10 * 1024 * 1024;
 const MAX_TEXT_CHARS = 500_000;
 
+/** The author's document, for a reviewer who currently holds the submission. */
 export async function findDocumentPreview(
   reviewerId: string,
   submissionId: string,
@@ -40,12 +41,22 @@ export async function findDocumentPreview(
     orderBy: { createdAt: "desc" },
     select: { storageKey: true, originalFilename: true, sizeBytes: true },
   });
-  if (!file) return { type: "none" };
+  return file ? previewOf(file) : { type: "none" };
+}
 
+/**
+ * Builds the preview for one stored file. Callers are responsible for having
+ * checked that whoever is asking may see it.
+ */
+export async function previewOf(file: {
+  storageKey: string;
+  originalFilename: string;
+  sizeBytes: number;
+}): Promise<DocumentPreview> {
   const extension = extensionOf(file.originalFilename);
 
   if (extension === "pdf") {
-    // The reference, not the real filename, in case the author is hidden.
+    // A neutral name: the real one may identify someone who should be hidden.
     return {
       type: "pdf",
       url: await storage().presignDownload({ key: file.storageKey, filename: "document.pdf" }),

@@ -1,11 +1,11 @@
-import { Check, Download, FileText } from "lucide-react";
+import { Check, Download } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { acceptAction } from "@/app/(reviewer)/reviewer/reviews/[id]/actions";
 import { DeclineForm } from "@/app/(reviewer)/reviewer/reviews/[id]/decline-form";
-import { PdfPreview } from "@/app/(reviewer)/reviewer/reviews/[id]/pdf-preview";
 import { ReviewForm } from "@/app/(reviewer)/reviewer/reviews/[id]/review-form";
 import { BackLink } from "@/components/back-link";
+import { DocumentPane } from "@/components/document-pane";
 import { FormMessage } from "@/components/form";
 import { RoleArea } from "@/components/role-area";
 import { StatusPill } from "@/components/status-pill";
@@ -16,7 +16,7 @@ import { env } from "@/lib/env";
 import { formatBytes } from "@/lib/files/validate";
 import { formatDate, isUuid } from "@/lib/format";
 import { findReviewerSubmission, findTemplateFor } from "@/lib/reviews";
-import { type DocumentPreview, findDocumentPreview, previewDocument } from "@/lib/reviews/preview";
+import { findDocumentPreview } from "@/lib/reviews/preview";
 
 export const metadata: Metadata = { title: "Review" };
 
@@ -67,7 +67,15 @@ export default async function ReviewPage({ params }: PageProps<"/reviewer/review
       {submission.phase !== "invited" && preview && (
         <div className="grid grid-cols-[minmax(0,1fr)] gap-x-10 gap-y-10 lg:grid-cols-2">
           <div className="space-y-6 lg:sticky lg:top-24 lg:self-start">
-            <DocumentPane submission={submission} preview={preview} />
+            {submission.document && (
+              <DocumentPane
+                label="The document"
+                filename={submission.document.filename}
+                sizeBytes={submission.document.sizeBytes}
+                downloadHref={`/reviewer/reviews/${submission.id}/document`}
+                preview={preview}
+              />
+            )}
             <Brief submission={submission} />
           </div>
 
@@ -153,63 +161,6 @@ function Invitation({ submission }: { submission: ReviewerSubmissionDTO }) {
         <DeclineForm submissionId={submission.id} />
       </div>
     </div>
-  );
-}
-
-function DocumentPane({
-  submission,
-  preview,
-}: {
-  submission: ReviewerSubmissionDTO;
-  preview: DocumentPreview;
-}) {
-  return (
-    <section
-      aria-label="The document"
-      className="border-border bg-card overflow-hidden rounded-2xl border"
-    >
-      <div className="border-border flex items-center justify-between gap-3 border-b px-4 py-3">
-        <span className="flex min-w-0 items-center gap-2.5">
-          <FileText aria-hidden className="text-mark size-4 shrink-0" strokeWidth={1.75} />
-          <span className="truncate text-sm font-medium">{submission.document?.filename}</span>
-          {submission.document && (
-            <span className="text-muted-foreground shrink-0 text-xs">
-              {formatBytes(submission.document.sizeBytes)}
-            </span>
-          )}
-        </span>
-        <Button asChild variant="outline" size="sm">
-          <a href={`/reviewer/reviews/${submission.id}/document`}>
-            <Download aria-hidden />
-            Download
-          </a>
-        </Button>
-      </div>
-
-      <div className="max-h-[70vh] overflow-y-auto">
-        {preview.type === "pdf" && <PdfPreview url={preview.url} />}
-        {preview.type === "html" && (
-          // An empty sandbox: the converted document can run no script, submit
-          // no form and reach nothing outside its own frame.
-          <iframe
-            title="Document preview"
-            sandbox=""
-            srcDoc={previewDocument(preview.html)}
-            className="block h-[70vh] w-full bg-white"
-          />
-        )}
-        {preview.type === "text" && (
-          <pre className="p-6 font-sans text-sm leading-relaxed whitespace-pre-wrap">
-            {preview.text}
-          </pre>
-        )}
-        {preview.type === "none" && (
-          <p className="text-muted-foreground px-6 py-14 text-center text-sm leading-relaxed">
-            This kind of file cannot be previewed here. Download it to read it.
-          </p>
-        )}
-      </div>
-    </section>
   );
 }
 

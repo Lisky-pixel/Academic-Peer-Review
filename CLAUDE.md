@@ -10,8 +10,9 @@ plan and the verification checklist.
 
 ## Status
 
-Phases 0–6 are complete and verified. Next is Phase 7 (admin approval and
-delivery).
+Phases 0–7 are complete and verified: the whole workflow runs end to end,
+from submission to the author reading their review. Next is Phase 8
+(notifications: email, the in-app bell, reminders, the maintenance job).
 
 Phases 3–4 (storage and submissions):
 
@@ -69,12 +70,33 @@ Phase 5 (assignment), in `lib/assignments`:
 - `Review.overallFeedback` is unused: overall feedback is the last criterion
   of every template.
 
+Phase 7 (approval and delivery), in `lib/approvals`:
+
+- The approval screen is the top of `/admin/submissions/[id]`: the author's
+  document and the scrubbed annotated copy side by side, the answers, then
+  approve or send back. `approveReview` and `requestRevision` go through
+  `transition()`; each writes an `AdminDecision`. A revision reopens the
+  review (`DRAFT`, `revisionRound` + 1) and keeps the reviewer's answers.
+- `approveReview` refuses unless the annotated file has `scrubbedAt`, and the
+  author-facing query (`findOwnReview`) only matches approved submissions and
+  scrubbed files. Both checks are deliberate repeats of earlier ones.
+- **`toUserReviewDTO()` in `lib/dto/approval.ts` is the author-facing review.**
+  `reviewer` is the literal "Anonymous"; admin notes to the reviewer are not
+  in it. Its field list is locked by a test.
+- `DELIVERED` is set by `markDelivered`, called from the browser
+  (`DeliveryBeacon`) once the review is on screen, or by downloading the
+  reviewed file — never during server render, so a prefetch cannot deliver.
+- `components/document-pane.tsx` and `components/review-answers.tsx` are
+  shared by reviewer, admin and author views.
+
 Known limits, deliberately left:
 
 - Hiding the author hides their name and filename, **not** what is inside
   their document or its metadata. A CV names its author regardless.
 - Scrubbing removes metadata, not a name a reviewer types into a comment.
-- The admin cannot yet read a submitted review; that is Phase 7.
+  The admin reads every review before release and is the check on that.
+- Nobody is emailed about anything yet: every notification is an in-app row
+  that no page displays. That is Phase 8.
 - **Production needs a CORS rule on the R2 bucket** allowing `PUT` from the
   app origin with the `Content-Type` header. MinIO allows all origins by
   default, so this does not show up in development.

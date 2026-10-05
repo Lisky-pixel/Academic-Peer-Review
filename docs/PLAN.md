@@ -1,5 +1,6 @@
-> **Status (2026-10-05):** Phases 0–6 complete and verified. Next is Phase 7
-> (admin approval and delivery). Current working context lives in `CLAUDE.md`.
+> **Status (2026-10-05):** Phases 0–7 complete and verified; the full workflow
+> runs end to end. Next is Phase 8 (notifications). Current working context
+> lives in `CLAUDE.md`.
 
 # ReviewFlow — Implementation Plan
 

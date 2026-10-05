@@ -2,10 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { markDelivered } from "@/lib/approvals";
 import { requireRole } from "@/lib/auth/guards";
 import { getRequestMetadata } from "@/lib/auth/request";
 import { type FormState, zodFieldErrors } from "@/lib/auth/schemas";
 import { REJECTION_MESSAGE } from "@/lib/files/validate";
+import { isUuid } from "@/lib/format";
 import {
   confirmUpload,
   createDraft,
@@ -146,4 +148,13 @@ export async function withdrawAction(formData: FormData): Promise<void> {
   revalidatePath("/dashboard");
   revalidatePath(detailPath(submissionId));
   redirect("/dashboard");
+}
+
+/** Called by the browser once the author has their approved review on screen. */
+export async function markDeliveredAction(submissionId: string): Promise<void> {
+  const user = await requireRole("USER");
+  if (!isUuid(submissionId)) return;
+
+  await markDelivered(user.id, submissionId, "view");
+  revalidatePath("/dashboard");
 }

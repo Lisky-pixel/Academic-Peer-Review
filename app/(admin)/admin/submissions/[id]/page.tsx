@@ -3,7 +3,11 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { setAuthorVisibilityAction } from "@/app/(admin)/admin/submissions/[id]/actions";
 import { AssignForm } from "@/app/(admin)/admin/submissions/[id]/assign-form";
+import { DecisionForms } from "@/app/(admin)/admin/submissions/[id]/decision-forms";
 import { BackLink } from "@/components/back-link";
+import { DocumentPane } from "@/components/document-pane";
+import { FormMessage } from "@/components/form";
+import { ReviewAnswers } from "@/components/review-answers";
 import { RoleArea } from "@/components/role-area";
 import { StatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
@@ -12,7 +16,9 @@ import {
   findSubmissionActivity,
   findSubmissionForAdmin,
 } from "@/lib/assignments";
+import { findAdminPreviews, findReviewForAdmin } from "@/lib/approvals";
 import { requireRole } from "@/lib/auth/guards";
+import { type AdminReviewDTO, toAdminReviewDTO } from "@/lib/dto/approval";
 import {
   type AdminSubmissionDetailDTO,
   type AssignmentDTO,
@@ -61,6 +67,13 @@ export default async function AdminSubmissionPage({
     findSubmissionActivity(id).then((list) => list.map(toActivityDTO)),
   ]);
 
+  // A review exists once the reviewer has started one; it is shown to the
+  // administrator from the moment it is first submitted.
+  const reviewRecord = await findReviewForAdmin(id);
+  const review = reviewRecord ? toAdminReviewDTO(reviewRecord) : null;
+  const showReview = review !== null && review.submittedAt !== null;
+  const previews = showReview && reviewRecord ? await findAdminPreviews(reviewRecord) : null;
+
   return (
     <RoleArea
       user={user}
@@ -76,10 +89,15 @@ export default async function AdminSubmissionPage({
         </span>
       }
       current="/admin"
+      wide={showReview}
     >
+      {showReview && review && previews && (
+        <ReviewPanel submissionId={submission.id} review={review} previews={previews} />
+      )}
+
       <div className="grid grid-cols-[minmax(0,1fr)] gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="space-y-10">
-          <Section title={submission.canReassign ? "Reviewer" : "Assign a reviewer"}>
+          <Section title={submission.canAssign ? "Assign a reviewer" : "Reviewer"}>
             <ReviewerPanel submission={submission} reviewers={reviewers} />
           </Section>
 
@@ -138,6 +156,104 @@ export default async function AdminSubmissionPage({
         </div>
       </div>
     </RoleArea>
+  );
+}
+
+const DECISION_LABEL = {
+  APPROVED: "Approved",
+  REVISION_REQUESTED: "Changes requested",
+} as const;
+
+/**
+ * The approval screen: the author's document and the reviewer's annotated
+ * copy side by side, the review beneath them, then the decision.
+ */
+function ReviewPanel({
+  submissionId,
+  review,
+  previews,
+}: {
+  submissionId: string;
+  review: AdminReviewDTO;
+  previews: Awaited<ReturnType<typeof findAdminPreviews>>;
+}) {
+  return (
+    <section aria-label="The review" className="border-border space-y-8 border-b pb-12">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+        <h2 className="font-heading text-2xl font-medium">The review</h2>
+        <p className="text-muted-foreground text-sm">
+          By {review.reviewerName}
+          {review.submittedAt && ` · submitted ${formatDate(review.submittedAt)}`}
+          {review.round > 0 && ` · revision ${review.round}`}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-2">
+        {review.original && (
+          <DocumentPane
+            label="What the author sent"
+            filename={review.original.filename}
+            sizeBytes={review.original.sizeBytes}
+            downloadHref={`/admin/submissions/${submissionId}/document`}
+            preview={previews.original}
+          />
+        )}
+        {review.annotated ? (
+          <DocumentPane
+            label="What the author will receive"
+            filename={review.annotated.filename}
+            sizeBytes={review.annotated.sizeBytes}
+            downloadHref={`/admin/submissions/${submissionId}/annotated`}
+            preview={previews.annotated}
+          />
+        ) : (
+          <p className="border-border text-muted-foreground rounded-2xl border border-dashed px-6 py-14 text-center text-sm">
+            No annotated copy is attached.
+          </p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-x-12 gap-y-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <ReviewAnswers criteria={review.criteria} />
+
+        <div className="space-y-6">
+          {review.awaitingDecision ? (
+            <div className="space-y-4">
+              <h3 className="font-heading text-xl font-medium">Your decision</h3>
+              <DecisionForms submissionId={submissionId} />
+            </div>
+          ) : (
+            review.decisions[0] && (
+              <FormMessage tone={review.decisions[0].decision === "APPROVED" ? "success" : "error"}>
+                <span className="font-medium">{DECISION_LABEL[review.decisions[0].decision]}</span>{" "}
+                by {review.decisions[0].adminName} on {formatDate(review.decisions[0].at)}.
+              </FormMessage>
+            )
+          )}
+
+          {review.decisions.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-medium">Decisions so far</h3>
+              <ol className="space-y-4">
+                {review.decisions.map((decision) => (
+                  <li key={decision.id} className="border-border border-l pl-4">
+                    <p className="text-sm font-medium">{DECISION_LABEL[decision.decision]}</p>
+                    <p className="text-muted-foreground text-xs">
+                      {decision.adminName} · {formatDate(decision.at)}
+                    </p>
+                    {decision.note && (
+                      <p className="text-muted-foreground mt-1 text-sm leading-relaxed whitespace-pre-wrap">
+                        {decision.note}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
