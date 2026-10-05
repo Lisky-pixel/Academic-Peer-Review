@@ -2,6 +2,7 @@ import { ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { RoleArea } from "@/components/role-area";
+import { StatTiles } from "@/components/stat-tiles";
 import { StatusPill } from "@/components/status-pill";
 import { requireRole } from "@/lib/auth/guards";
 import { type ReviewerQueueItemDTO, toReviewerQueueItemDTO } from "@/lib/dto/review";
@@ -66,6 +67,33 @@ export default async function ReviewerHomePage({ searchParams }: PageProps<"/rev
       description="Documents assigned to you. The author never learns who reviewed their work."
       current="/reviewer"
     >
+      <StatTiles
+        stats={[
+          {
+            label: "To answer",
+            value: items.filter(TABS.pending.match).length,
+            href: "/reviewer?tab=pending",
+            tone: "attention",
+          },
+          {
+            label: "In progress",
+            value: items.filter(TABS.active.match).length,
+            href: "/reviewer?tab=active",
+          },
+          {
+            label: "Overdue",
+            value: items.filter(TABS.overdue.match).length,
+            href: "/reviewer?tab=overdue",
+            tone: "attention",
+          },
+          {
+            label: "Submitted",
+            value: items.filter(TABS.completed.match).length,
+            href: "/reviewer?tab=completed",
+          },
+        ]}
+      />
+
       <div className="space-y-5">
         <nav aria-label="Filter your queue" className="flex gap-1.5 overflow-x-auto pb-1">
           {(Object.keys(TABS) as Tab[]).map((key) => {

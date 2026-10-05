@@ -10,9 +10,8 @@ plan and the verification checklist.
 
 ## Status
 
-Phases 0–8 are complete and verified: the whole workflow runs end to end,
-and every step notifies the right people in the app and by email. Next is
-Phase 9 (dashboards and admin management).
+Phases 0–9 are complete and verified. Only Phase 10 (hardening and launch)
+remains.
 
 Phases 3–4 (storage and submissions):
 
@@ -119,6 +118,30 @@ Phase 8 (notifications):
   `sendDeadlineReminders`, `escalateOverdueReviews`) take an optional scope so
   tests touch only their own rows. Always pass one in a test.
 
+Phase 9 (dashboards and admin management), in `lib/admin`:
+
+- **The SRS is not in this repository**, so "the dashboards exactly as
+  specified in SRS §11" could not be checked. The headline numbers on the
+  three dashboards (`StatTiles`) are a reasonable reading; compare them with
+  the SRS before launch.
+- `/admin/users`: search, filter, suspend, reactivate. Accounts are suspended,
+  never deleted. Suspending ends every session at once; you cannot suspend
+  yourself or the last active administrator. Roles cannot be changed here —
+  reviewers and admins still come only from invitations.
+- `/admin/document-types`: add, rename, withdraw. **Templates are versioned:**
+  `publishTemplate` never edits criteria, it inserts a new version and retires
+  the old one, so finished and in-progress reviews keep their questions.
+  Publishing with no change writes nothing.
+- `/admin/activity`: the audit log with filters and paging. Add a label in
+  `lib/dto/admin.ts` `actionLabel` for every new logged action.
+- `/admin/reports`: submissions per week, turnaround, reviewer throughput,
+  computed live. The arithmetic is in pure functions in `lib/admin/reports.ts`.
+- The one chart (`components/weekly-bars.tsx`) is a single series in the
+  accent blue with exact values on hover or focus and a table view. Keep any
+  new chart to those rules: one axis, text in text colours, a table fallback.
+- An admin has six nav links, so `RoleArea` puts navigation on its own row
+  whenever there are more than three.
+
 Known limits, deliberately left:
 
 - Hiding the author hides their name and filename, **not** what is inside
@@ -215,6 +238,10 @@ enable` needs admin to write into `Program Files`.
 - **Restart `pnpm dev` after any migration.** The Prisma client is cached on
   `globalThis` across hot reloads, so a running server keeps the old schema
   and fails with "Unknown field" on the new columns.
+- **A test run that fails in clean-up leaves accounts behind**, including
+  active administrators, and every submission then emails all of them. If the
+  dev database feels slow or mail lags, look for `@reviewflow-test.invalid`
+  users. They are removed automatically once an hour old.
 - **Test files run one at a time** (`fileParallelism: false`), about 45s in
   all. In parallel, one file's cleanup deleted an admin while another file's
   submission was notifying every admin. `cleanUpTestUsers()` still removes

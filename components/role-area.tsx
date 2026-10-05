@@ -46,6 +46,8 @@ export async function RoleArea({
   children?: React.ReactNode;
 }) {
   const nav = navFor(user.role, current);
+  // A few links fit beside the brand; more than that need a row of their own.
+  const inline = nav.length <= 3;
   const [avatarUrl, bell] = await Promise.all([
     getOwnAvatarUrl(user.id),
     findBellNotifications(user.id).then(toBellDTO),
@@ -62,11 +64,13 @@ export async function RoleArea({
         >
           <div className="flex min-w-0 items-center gap-8">
             <Brand href={HOME_PATH[user.role]} onPanel />
-            <nav aria-label="Main" className="hidden items-center gap-1 text-sm md:flex">
-              {nav.map((item) => (
-                <NavLink key={item.href} {...item} />
-              ))}
-            </nav>
+            {inline && (
+              <nav aria-label="Main" className="hidden items-center gap-1 text-sm md:flex">
+                {nav.map((item) => (
+                  <NavLink key={item.href} {...item} />
+                ))}
+              </nav>
+            )}
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
@@ -81,15 +85,22 @@ export async function RoleArea({
           </div>
         </div>
 
-        {/* On a phone the links move to their own row and scroll sideways. */}
-        <nav
-          aria-label="Main"
-          className="border-panel-foreground/10 flex gap-1 overflow-x-auto border-t px-3 py-2 text-sm md:hidden"
-        >
-          {nav.map((item) => (
-            <NavLink key={item.href} {...item} />
-          ))}
-        </nav>
+        {/* The links get their own row, which scrolls sideways if it must:
+            always on a phone, and at every width when there are too many to
+            sit beside the brand (the administrator's six). */}
+        <div className={cn("border-panel-foreground/10 border-t", inline && "md:hidden")}>
+          <nav
+            aria-label="Main"
+            className={cn(
+              "mx-auto flex gap-1 overflow-x-auto px-3 py-2 text-sm sm:px-5",
+              wide ? "max-w-7xl" : "max-w-5xl",
+            )}
+          >
+            {nav.map((item) => (
+              <NavLink key={item.href} {...item} />
+            ))}
+          </nav>
+        </div>
       </header>
 
       <main

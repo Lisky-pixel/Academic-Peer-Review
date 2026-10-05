@@ -3,7 +3,8 @@ import type {
   AdminSubmissionDetailRecord,
   ReviewerWorkloadRecord,
 } from "@/lib/assignments";
-import type { AssignmentStatus, Role, SubmissionStatus } from "@/lib/generated/prisma/client";
+import { actionLabel, ROLE_LABEL } from "@/lib/dto/admin";
+import type { AssignmentStatus, SubmissionStatus } from "@/lib/generated/prisma/client";
 
 /**
  * Administrator-only views. These carry reviewer identity in full, which is
@@ -118,29 +119,6 @@ export function toAdminSubmissionDetailDTO(
   };
 }
 
-const ACTION_LABEL: Record<string, string> = {
-  "submission.create_draft": "Draft started",
-  "submission.submit": "Submitted for review",
-  "submission.assign": "Reviewer assigned",
-  "submission.reassign": "Reassigned to another reviewer",
-  "submission.accept": "Reviewer accepted",
-  "submission.decline": "Reviewer declined",
-  "submission.start_review": "Review started",
-  "submission.submit_review": "Review submitted",
-  "submission.request_revision": "Revision requested",
-  "submission.resubmit_review": "Revised review submitted",
-  "submission.approve": "Review approved",
-  "submission.deliver": "Delivered to the author",
-  "submission.cancel": "Cancelled",
-  "submission.author_visibility": "Author visibility changed",
-};
-
-const ROLE_LABEL: Record<Role, string> = {
-  USER: "Author",
-  REVIEWER: "Reviewer",
-  ADMIN: "Administrator",
-};
-
 export type ActivityDTO = {
   id: string;
   label: string;
@@ -167,7 +145,7 @@ export function toActivityDTO(record: ActivityRecord): ActivityDTO {
 
   return {
     id: record.id,
-    label: ACTION_LABEL[record.action] ?? record.action,
+    label: actionLabel(record.action),
     actor: record.actor
       ? `${record.actor.name}${record.actorRole ? ` (${ROLE_LABEL[record.actorRole]})` : ""}`
       : "System",

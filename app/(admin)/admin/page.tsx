@@ -2,8 +2,10 @@ import { ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { RoleArea } from "@/components/role-area";
+import { StatTiles } from "@/components/stat-tiles";
 import { StatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
+import { findAdminCounts } from "@/lib/admin/reports";
 import { requireRole } from "@/lib/auth/guards";
 import { toAdminSubmissionDTO } from "@/lib/dto/submission";
 import { formatDate, isUuid } from "@/lib/format";
@@ -68,7 +70,8 @@ export default async function AdminHomePage({ searchParams }: PageProps<"/admin"
   const { statuses, empty } = VIEWS[view];
   const filtered = Boolean(type || due);
 
-  const [records, documentTypes] = await Promise.all([
+  const [counts, records, documentTypes] = await Promise.all([
+    findAdminCounts(),
     findSubmissionsForAdmin(statuses ? [...statuses] : undefined, {
       documentTypeId: type || undefined,
       due: due || undefined,
@@ -84,6 +87,27 @@ export default async function AdminHomePage({ searchParams }: PageProps<"/admin"
       description="Everything authors have submitted. Drafts stay private until they are submitted."
       current="/admin"
     >
+      <StatTiles
+        stats={[
+          {
+            label: "Need a reviewer",
+            value: counts.needsReviewer,
+            href: "/admin",
+            tone: "attention",
+          },
+          { label: "With reviewers", value: counts.withReviewers, href: "/admin?view=active" },
+          {
+            label: "Need approval",
+            value: counts.needsApproval,
+            href: "/admin?view=approval",
+            tone: "attention",
+          },
+          { label: "Overdue reviews", value: counts.overdueReviews, tone: "attention" },
+          { label: "Not yet collected", value: counts.awaitingCollection },
+          { label: "Delivered", value: counts.delivered },
+        ]}
+      />
+
       <div className="space-y-5">
         <nav aria-label="Filter by status" className="flex gap-1.5 overflow-x-auto pb-1">
           {(Object.keys(VIEWS) as View[]).map((key) => (

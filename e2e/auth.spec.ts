@@ -1201,3 +1201,185 @@ test("the email preview page exists in development", async ({ page }) => {
   await page.goto("/dev/emails?t=review-ready");
   await expect(page.getByText("Your review is ready (RF-2026-0147)")).toBeVisible();
 });
+
+async function loginAsAdmin(page: Page) {
+  await login(page, "admin@reviewflow.local");
+  await expect(page).toHaveURL(/\/admin$/);
+}
+
+test("an admin suspends an account, which locks it out, and reactivates it", async ({
+  page,
+  request,
+  browser,
+}) => {
+  const email = freshEmail("suspend");
+  await registerAndConfirm(page, request, email);
+
+  // A second browser stays signed in as that user throughout.
+  const theirs = await browser.newContext();
+  const theirPage = await theirs.newPage();
+  await theirPage.setExtraHTTPHeaders({ "x-forwarded-for": `e2e-${randomUUID()}` });
+  await login(theirPage, email);
+  await expect(theirPage).toHaveURL(/\/dashboard$/);
+  await signOut(page);
+
+  await loginAsAdmin(page);
+  await page.getByRole("link", { name: "People" }).click();
+  await expect(page).toHaveURL(/\/admin\/users$/);
+  // The admin cannot suspend themselves: there is no control to do it.
+  await page.getByLabel("Search by name or email").fill("admin@reviewflow.local");
+  await page.getByRole("button", { name: "Filter" }).click();
+  await expect(page.getByText("(you)")).toBeVisible();
+  await expect(page.getByText("Suspend", { exact: true })).toHaveCount(0);
+
+  await page.getByLabel("Search by name or email").fill(email);
+  await page.getByRole("button", { name: "Filter" }).click();
+  const row = page.getByRole("listitem").filter({ hasText: email });
+  await expect(row).toContainText("Active");
+  await row.getByText("Suspend", { exact: true }).click();
+  await row.getByRole("button", { name: "Suspend E2E Person" }).click();
+  await expect(row).toContainText("Suspended");
+
+  // Their open session is dead on the very next request,
+  await theirPage.goto("/dashboard");
+  await expect(theirPage).toHaveURL(/\/login/);
+  // and the right password no longer gets them in.
+  await login(theirPage, email);
+  await expect(theirPage.getByText("Invalid email or password.")).toBeVisible();
+
+  await row.getByRole("button", { name: "Reactivate" }).click();
+  await expect(row).toContainText("Active");
+  await login(theirPage, email);
+  await expect(theirPage).toHaveURL(/\/dashboard$/);
+  await theirs.close();
+
+  // Both actions are in the activity log, attributed.
+  await page.getByRole("link", { name: "Activity" }).click();
+  await page.getByLabel("Kind").selectOption({ label: "People" });
+  await page.getByRole("button", { name: "Filter" }).click();
+  await expect(page).toHaveURL(/category=user/);
+  const entries = page.getByRole("row").filter({ hasText: "E2E Person" });
+  await expect(entries.filter({ hasText: "Account suspended" }).first()).toContainText(
+    "Ada Admin (Administrator)",
+  );
+  await expect(entries.filter({ hasText: "Account reactivated" }).first()).toBeVisible();
+});
+
+test("editing a review template publishes a new version and keeps the old one", async ({
+  page,
+}) => {
+  const name = `E2E type ${randomUUID().slice(0, 8)}`;
+  await loginAsAdmin(page);
+  await page.getByRole("link", { name: "Document types" }).click();
+  await expect(page).toHaveURL(/\/admin\/document-types$/);
+
+  // Adding a type lands on its template, which starts with four criteria.
+  await page.getByLabel("Name").fill(name);
+  await page.getByLabel("Description").fill("Created by a browser test");
+  await page.getByRole("button", { name: "Add document type" }).click();
+  await expect(page).toHaveURL(/\/admin\/document-types\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(name);
+  await expect(page.getByText("Template version 1")).toBeVisible();
+  await expect(page.getByLabel("Criterion 4 name")).toHaveValue("Overall feedback");
+  await expect(page.getByText("has not been changed since it was created")).toBeVisible();
+
+  // Publishing without changing anything makes no new version.
+  await page.getByRole("button", { name: "Publish as version 2" }).click();
+  await expect(page.getByText("Nothing had changed")).toBeVisible();
+
+  // A duplicate name is refused, and says why.
+  await page.getByLabel("Criterion 2 name").fill("Grammar and mechanics");
+  await page.getByRole("button", { name: "Publish as version 2" }).click();
+  await expect(page.getByText(/appears twice/)).toBeVisible();
+
+  // Rename one, add one, and publish.
+  await page.getByLabel("Criterion 2 name").fill("Tone and register");
+  await page.getByRole("button", { name: "Add a criterion" }).click();
+  await page.getByLabel("Criterion 5 name").fill("Evidence");
+  await page.getByLabel("Criterion 5 answer type").selectOption({ label: "Score only" });
+  await page.getByRole("button", { name: "Move criterion 5 up" }).click();
+  await expect(page.getByLabel("Criterion 4 name")).toHaveValue("Evidence");
+  await page.getByRole("button", { name: "Publish as version 2" }).click();
+  await expect(page.getByText(/Saved as version 2/)).toBeVisible();
+
+  // It survives a reload as version 2, with version 1 kept as it was.
+  await page.reload();
+  await expect(page.getByText("Template version 2")).toBeVisible();
+  await expect(page.getByLabel("Criterion 2 name")).toHaveValue("Tone and register");
+  await expect(page.getByLabel("Criterion 4 name")).toHaveValue("Evidence");
+  await expect(page.getByLabel("Criterion 5 name")).toHaveValue("Overall feedback");
+  await expect(page.getByRole("button", { name: "Publish as version 3" })).toBeVisible();
+  const earlier = page.locator("details").filter({ hasText: "Version 1" });
+  await earlier.locator("summary").click();
+  await expect(earlier).toContainText("Clarity");
+  await expect(earlier).not.toContainText("Tone and register");
+
+  // Authors can choose it, until it is withdrawn.
+  await page.goto("/admin/document-types");
+  await expect(page.getByRole("link", { name: new RegExp(name) })).toContainText("On offer");
+  await page.getByRole("link", { name: new RegExp(name) }).click();
+  await page.getByRole("button", { name: "Withdraw from the submission form" }).click();
+  await expect(page.getByText("Withdrawn").first()).toBeVisible();
+  await signOut(page);
+
+  await login(page, "user1@reviewflow.local");
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto("/dashboard/submissions/new");
+  const options = await page.getByLabel("Type of document").locator("option").allInnerTexts();
+  expect(options).toContain("Personal Statement");
+  expect(options).not.toContain(name);
+});
+
+test("the reports and dashboards render from real data", async ({ page }) => {
+  await loginAsAdmin(page);
+
+  // The admin dashboard tiles link to the lists they count.
+  const needApproval = page.getByRole("link", { name: /^Need approval \d+$/ });
+  await expect(needApproval).toBeVisible();
+  await needApproval.click();
+  await expect(page).toHaveURL(/view=approval/);
+
+  await page.getByRole("link", { name: "Reports" }).click();
+  await expect(page).toHaveURL(/\/admin\/reports$/);
+  await expect(page.getByRole("heading", { name: "Submissions received per week" })).toBeVisible();
+  // Twelve weeks, each with its exact figure available without hovering.
+  const bars = page.locator('li[aria-label^="Week of"]');
+  await expect(bars).toHaveCount(12);
+  await expect(bars.last()).toHaveAttribute("aria-label", /^Week of .+: \d+ submissions?$/);
+  // This week has submissions from the tests above, and says so on focus.
+  await bars.last().focus();
+  await expect(bars.last().locator('[role="tooltip"]')).toBeVisible();
+  await page.getByText("Show as a table").click();
+  await expect(page.getByRole("columnheader", { name: "Week starting" })).toBeVisible();
+
+  await expect(page.getByRole("heading", { name: "Turnaround" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Reviewers" })).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: "Rita Reviewer" })).toBeVisible();
+  await signOut(page);
+
+  // The reviewer and the author each get their own headline numbers.
+  await login(page, "reviewer1@reviewflow.local");
+  await expect(page).toHaveURL(/\/reviewer$/);
+  await expect(page.getByRole("link", { name: /^Submitted \d+$/ }).first()).toBeVisible();
+  await signOut(page);
+
+  await login(page, "user1@reviewflow.local");
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByText("Ready to read").first()).toBeVisible();
+  await expect(page.getByText("Completed").first()).toBeVisible();
+});
+
+test("the admin pages are closed to everyone else", async ({ page }) => {
+  await login(page, "reviewer1@reviewflow.local");
+  await expect(page).toHaveURL(/\/reviewer$/);
+
+  for (const path of [
+    "/admin/users",
+    "/admin/document-types",
+    "/admin/activity",
+    "/admin/reports",
+  ]) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/reviewer$/);
+  }
+});

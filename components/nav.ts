@@ -7,7 +7,11 @@ const NAV = {
   REVIEWER: [{ href: "/reviewer", label: "Queue" }],
   ADMIN: [
     { href: "/admin", label: "Submissions" },
+    { href: "/admin/users", label: "People" },
     { href: "/admin/invites", label: "Invitations" },
+    { href: "/admin/document-types", label: "Document types" },
+    { href: "/admin/activity", label: "Activity" },
+    { href: "/admin/reports", label: "Reports" },
   ],
 } as const satisfies Record<Role, readonly NavItem[]>;
 

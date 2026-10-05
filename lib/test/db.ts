@@ -126,3 +126,23 @@ export async function purgeUsers(userIds: string[]): Promise<void> {
   // Sessions, tokens and notifications addressed to the user cascade.
   await db.user.deleteMany({ where: { id: { in: userIds } } });
 }
+
+/**
+ * Removes document types left behind by the browser tests, which add one
+ * each run and have no database access of their own to tidy up with. Only
+ * types with the tests' name prefix and no submissions are touched.
+ */
+export async function cleanUpTestDocumentTypes(): Promise<void> {
+  const types = await db.documentType.findMany({
+    where: { name: { startsWith: "E2E type " }, submissions: { none: {} } },
+    select: { id: true },
+  });
+  const ids = types.map((type) => type.id);
+  if (ids.length === 0) return;
+
+  await db.activityLog.deleteMany({ where: { entityId: { in: ids } } });
+  await db.reviewTemplate.deleteMany({
+    where: { documentTypeId: { in: ids }, reviews: { none: {} } },
+  });
+  await db.documentType.deleteMany({ where: { id: { in: ids }, templates: { none: {} } } });
+}

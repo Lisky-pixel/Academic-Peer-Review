@@ -1,5 +1,5 @@
-> **Status (2026-10-05):** Phases 0–8 complete and verified. Next is Phase 9
-> (dashboards and admin management). Current working context lives in
+> **Status (2026-10-05):** Phases 0–9 complete and verified. Only Phase 10
+> (hardening and launch) remains. Current working context lives in
 > `CLAUDE.md`.
 
 # ReviewFlow — Implementation Plan

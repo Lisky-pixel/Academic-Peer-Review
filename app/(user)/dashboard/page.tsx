@@ -2,6 +2,7 @@ import { ChevronRight, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { RoleArea } from "@/components/role-area";
+import { StatTiles } from "@/components/stat-tiles";
 import { StatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
 import { requireRole } from "@/lib/auth/guards";
@@ -35,6 +36,31 @@ export default async function UserDashboardPage() {
       current="/dashboard"
       actions={submissions.length > 0 ? <NewSubmissionButton /> : undefined}
     >
+      {submissions.length > 0 && (
+        <StatTiles
+          stats={[
+            {
+              label: "In progress",
+              value: submissions.filter((s) =>
+                ["awaiting_reviewer", "with_reviewer", "in_review", "final_checks"].includes(
+                  s.stage,
+                ),
+              ).length,
+            },
+            {
+              label: "Ready to read",
+              value: submissions.filter((s) => s.stage === "ready").length,
+              tone: "attention",
+            },
+            {
+              label: "Completed",
+              value: submissions.filter((s) => s.stage === "completed").length,
+            },
+            { label: "Drafts", value: submissions.filter((s) => s.stage === "draft").length },
+          ]}
+        />
+      )}
+
       {submissions.length === 0 ? (
         <div className="border-border rounded-2xl border border-dashed px-6 py-16 text-center">
           <p className="font-heading text-2xl font-medium">Nothing here yet</p>

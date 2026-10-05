@@ -434,3 +434,60 @@ describe("message builders used by the workflow", () => {
     );
   });
 });
+
+describe.skipIf(!dbAvailable)("a queue longer than one round", () => {
+  it("is worked through in a single run, not left for the next one", async () => {
+    // One event can notify many administrators at once. A dispatcher that
+    // took a fixed slice left the overflow unsent until something else
+    // happened to queue mail.
+    const user = await createUser("USER", "Many Messages");
+    await db.emailLog.createMany({
+      data: Array.from({ length: 60 }, (_, index) => ({
+        toEmail: user.email,
+        template: "REVIEW_READY",
+        subject: `Message ${index}`,
+        payload: { heading: "Hello", paragraphs: ["Text"], cta: null },
+      })),
+    });
+
+    const summary = await dispatchQueuedEmails(200, { toEmail: user.email });
+
+    expect(summary).toEqual({ sent: 60, failed: 0 });
+    expect(await db.emailLog.count({ where: { toEmail: user.email, status: "SENT" } })).toBe(60);
+  });
+
+  it("stops at its limit, leaving the rest queued", async () => {
+    const user = await createUser("USER", "Limited Run");
+    await db.emailLog.createMany({
+      data: Array.from({ length: 40 }, (_, index) => ({
+        toEmail: user.email,
+        template: "REVIEW_READY",
+        subject: `Message ${index}`,
+        payload: { heading: "Hello", paragraphs: ["Text"], cta: null },
+      })),
+    });
+
+    expect(await dispatchQueuedEmails(30, { toEmail: user.email })).toEqual({
+      sent: 30,
+      failed: 0,
+    });
+    expect(await db.emailLog.count({ where: { toEmail: user.email, status: "QUEUED" } })).toBe(10);
+  });
+
+  it("does not loop forever on rows it cannot send", async () => {
+    const user = await createUser("USER", "All Broken");
+    await db.emailLog.createMany({
+      data: Array.from({ length: 30 }, () => ({
+        toEmail: user.email,
+        template: "REVIEW_READY",
+        subject: "Broken",
+        payload: { nonsense: true },
+      })),
+    });
+
+    expect(await dispatchQueuedEmails(200, { toEmail: user.email })).toEqual({
+      sent: 0,
+      failed: 0,
+    });
+  });
+});
