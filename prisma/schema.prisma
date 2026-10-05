@@ -34,6 +34,7 @@ enum Role {
 }
 
 enum UserStatus {
+  UNVERIFIED // self-registered, has not yet confirmed the email address
   INVITED // reviewer has been invited but has not set a password yet
   ACTIVE
   SUSPENDED
@@ -42,6 +43,7 @@ enum UserStatus {
 enum TokenPurpose {
   INVITE
   PASSWORD_RESET
+  EMAIL_VERIFICATION
 }
 
 /// The submission lifecycle. Transitions are defined and enforced in
@@ -137,6 +139,18 @@ model User {
   passwordHash String?
   role         Role       @default(USER)
   status       UserStatus @default(ACTIVE)
+
+  /// Optional short description. Shown to administrators only.
+  bio String?
+
+  /// Profile picture, stored here rather than in object storage because it is
+  /// tiny (the browser resizes it to 256px before upload) and must be served
+  /// through an access check, never from a public URL: a reviewer's face is
+  /// as identifying as their name. See app/avatar/[userId]/route.ts.
+  avatar          Bytes?
+  avatarMime      String?
+  /// Changes on every upload, so it doubles as the cache-busting version.
+  avatarUpdatedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -543,4 +557,17 @@ model AppSetting {
 model ReferenceCounter {
   year      Int @id
   lastValue Int @default(0)
+}
+
+/// Fixed-window counter behind lib/rate-limit. One row per limited key, e.g.
+/// "login:pair:<sha256>". Keys are hashed before they get here, so the table
+/// never accumulates the email addresses people tried to log in with.
+model RateLimit {
+  key     String   @id
+  count   Int
+  /// When the current window ends. A row past this is stale: the next hit
+  /// restarts it at 1, and the maintenance job deletes the rest.
+  resetAt DateTime
+
+  @@index([resetAt])
 }

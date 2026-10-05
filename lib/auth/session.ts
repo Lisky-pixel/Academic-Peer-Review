@@ -1,3 +1,4 @@
+import { SESSION_COOKIE_NAME } from "@/lib/auth/routes";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
 import { db } from "@/lib/db";
 import { env, isProduction } from "@/lib/env";
@@ -19,7 +20,7 @@ import type { Role, UserStatus } from "@/lib/generated/prisma/client";
  * and password-reset links.
  */
 
-export const SESSION_COOKIE_NAME = "reviewflow_session";
+export { SESSION_COOKIE_NAME };
 
 const MS_PER_DAY = 86_400_000;
 
@@ -142,19 +143,29 @@ export async function deleteExpiredSessions(): Promise<number> {
   return count;
 }
 
+/** Browsers cap cookie lifetimes at 400 days; asking for more is ignored. */
+const COOKIE_MAX_AGE_SECONDS = 400 * 86_400;
+
 /**
  * Cookie attributes.
  *
  * sameSite "lax" blocks the cookie on cross-site POSTs — the shape of most
  * CSRF — while still allowing normal inbound navigation, so email links to a
  * submission land the recipient logged in.
+ *
+ * The cookie deliberately outlives the session. Expiry is decided by the
+ * Session row, which slides forward with use; the cookie cannot follow it,
+ * because cookies cannot be rewritten while a page renders. If the cookie
+ * carried the original expiry, an active user would be logged out on day 30
+ * however recently they had been here. A cookie whose session has expired is
+ * just an opaque string that matches nothing.
  */
-export function sessionCookieOptions(expiresAt: Date) {
+export function sessionCookieOptions() {
   return {
     httpOnly: true,
     secure: isProduction,
     sameSite: "lax" as const,
     path: "/",
-    expires: expiresAt,
+    maxAge: COOKIE_MAX_AGE_SECONDS,
   };
 }

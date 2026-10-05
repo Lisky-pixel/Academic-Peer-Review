@@ -1,0 +1,5 @@
+-- AlterEnum
+ALTER TYPE "TokenPurpose" ADD VALUE 'EMAIL_VERIFICATION';
+
+-- AlterEnum
+ALTER TYPE "UserStatus" ADD VALUE 'UNVERIFIED';
