@@ -96,26 +96,29 @@
   --secondary: light-dark(#e8ecf3, #1e2738);
   --secondary-foreground: light-dark(#1b2a4a, #e8ecf3);
   --muted: light-dark(#eceff4, #1a2231);
-  --muted-foreground: light-dark(#596376, #93a0b6);
+  --muted-foreground: light-dark(#4d5769, #93a0b6);
   --accent: light-dark(#e8ecf3, #1e2738);
   --accent-foreground: light-dark(#1b2a4a, #e8ecf3);
   --destructive: light-dark(#b3261e, #f2867d);
   --border: light-dark(#dbe0e8, #273146);
   --input: light-dark(#c9d0dc, #35415a);
   --ring: light-dark(#5b6f9c, #7f93bd);
-  --mark: light-dark(#2b5cd9, #8eacff);
+  --mark: light-dark(#2553cc, #8eacff);
   --success: light-dark(#12643a, #6fd3a0);
   --warning: light-dark(#946200, #e8b84a);
   --panel: light-dark(#1b2a4a, #151c29);
   --panel-foreground: light-dark(#ffffff, #e8ecf3);
   /* Glass: translucent surfaces over the app backdrop. */
   --glass: light-dark(rgb(255 255 255 / 0.55), rgb(27 37 56 / 0.5));
+  --glass-strong: light-dark(rgb(255 255 255 / 0.8), rgb(17 24 38 / 0.8));
   --glass-border: light-dark(rgb(255 255 255 / 0.75), rgb(255 255 255 / 0.09));
   --glass-highlight: light-dark(rgb(255 255 255 / 0.9), rgb(255 255 255 / 0.07));
   --glass-shadow: light-dark(rgb(27 42 74 / 0.16), rgb(0 0 0 / 0.55));
-  --backdrop-a: light-dark(rgb(43 92 217 / 0.3), rgb(43 92 217 / 0.34));
-  --backdrop-b: light-dark(rgb(110 150 255 / 0.42), rgb(31 58 138 / 0.5));
-  --backdrop-c: light-dark(rgb(140 120 255 / 0.22), rgb(20 40 100 / 0.45));
+  --backdrop-dot: light-dark(rgb(27 42 74 / 0.13), rgb(255 255 255 / 0.09));
+  --glow: light-dark(rgb(43 92 217 / 0.14), rgb(142 172 255 / 0.16));
+  --backdrop-a: light-dark(rgb(43 92 217 / 0.18), rgb(43 92 217 / 0.34));
+  --backdrop-b: light-dark(rgb(110 150 255 / 0.3), rgb(31 58 138 / 0.5));
+  --backdrop-c: light-dark(rgb(140 120 255 / 0.2), rgb(20 40 100 / 0.45));
   --panel-muted: light-dark(#b4c0d9, #93a0b6);
   --panel-mark: #8eacff;
   --chart-1: light-dark(#1b2a4a, #d6e0f5);
@@ -167,6 +170,12 @@
  * Where the visitor has asked for less transparency, or the browser cannot
  * blur, the panes fall back to the ordinary solid card.
  */
+/* For glass that text scrolls beneath, such as a floating header: blur alone
+   does not keep the words on top readable. Use together with `glass`. */
+@utility glass-strong {
+  --glass: var(--glass-strong);
+}
+
 @utility glass {
   background-color: var(--glass);
   border: 1px solid var(--glass-border);
@@ -174,7 +183,6 @@
     inset 0 1px 0 0 var(--glass-highlight),
     0 12px 32px -16px var(--glass-shadow);
   backdrop-filter: blur(22px) saturate(150%);
-  -webkit-backdrop-filter: blur(22px) saturate(150%);
 
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     background-color: var(--card);
@@ -183,22 +191,152 @@
     background-color: var(--card);
     border-color: var(--border);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 
-/* The backdrop itself: three soft pools of blue, fixed behind the page. */
+/*
+ * The backdrop: three soft pools of blue drifting slowly behind the page,
+ * under a faint dot grid that fades out towards the bottom. Rendered by the
+ * Backdrop component, fixed behind everything.
+ */
 @utility app-backdrop {
   position: fixed;
   inset: 0;
   z-index: -10;
+  overflow: hidden;
   pointer-events: none;
-  background:
-    radial-gradient(40rem 30rem at 12% 14%, var(--backdrop-a), transparent 70%),
-    radial-gradient(36rem 28rem at 90% 26%, var(--backdrop-b), transparent 70%),
-    radial-gradient(46rem 30rem at 50% 104%, var(--backdrop-c), transparent 70%), var(--background);
+  background: var(--background);
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(var(--backdrop-dot) 1px, transparent 1px);
+    background-size: 22px 22px;
+    mask-image: linear-gradient(to bottom, black, transparent 70%);
+  }
 
   @media (prefers-reduced-transparency: reduce) {
-    background: var(--background);
+    &::after {
+      display: none;
+    }
+  }
+}
+
+/* The pools stand still on purpose. Drifting them looked good, but every
+   frosted card above has to re-blur whatever moves beneath it, on every
+   frame, and that made whole pages sluggish. */
+@utility backdrop-pool {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(70px);
+
+  @media (prefers-reduced-transparency: reduce) {
+    display: none;
+  }
+}
+
+/*
+ * A soft light that follows the pointer across a surface. Any element with
+ * data-glow gets it; components/pointer-glow.tsx keeps --glow-x / --glow-y
+ * up to date. Purely decorative, and absent for touch and reduced motion.
+ */
+[data-glow] {
+  position: relative;
+  isolation: isolate;
+}
+[data-glow]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 300ms ease;
+  background: radial-gradient(
+    16rem circle at var(--glow-x, 50%) var(--glow-y, 50%),
+    var(--glow),
+    transparent 65%
+  );
+  pointer-events: none;
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  [data-glow]:hover::before {
+    opacity: 1;
+  }
+}
+
+/* Content easing into place as a page arrives. */
+@utility page-enter {
+  animation: page-enter 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+}
+
+/* A gentle bob, for the pictures on the landing page. */
+@utility float-slow {
+  animation: float-slow 7s ease-in-out infinite alternate;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+@keyframes float-slow {
+  from {
+    transform: translate3d(0, -6px, 0);
+  }
+  to {
+    transform: translate3d(0, 8px, 0);
+  }
+}
+
+/*
+ * Sections rising into view as the page is scrolled. Built on scroll-driven
+ * animations, so there is no script; where the browser lacks them the content
+ * is simply there, which is the correct fallback.
+ */
+@utility reveal {
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      animation: reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 55%;
+    }
+  }
+}
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 28px, 0) scale(0.98);
+  }
+}
+
+/*
+ * Switching theme. The new theme is revealed as a circle growing from the
+ * switch itself. components/theme-toggle.tsx sets the centre and radius and
+ * adds .theme-switching for the length of the transition.
+ */
+.theme-switching::view-transition-old(root),
+.theme-switching::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+.theme-switching::view-transition-new(root) {
+  animation: theme-reveal 620ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes theme-reveal {
+  from {
+    clip-path: circle(0 at var(--vt-x, 50%) var(--vt-y, 0));
+  }
+  to {
+    clip-path: circle(var(--vt-r, 150vmax) at var(--vt-x, 50%) var(--vt-y, 0));
   }
 }

@@ -65,7 +65,7 @@ export function AnnotatedPageVisual({ className }: { className?: string }) {
       {/* The reviewer's note, pinned to the highlighted sentence. */}
       <div
         aria-hidden
-        className="border-border bg-popover absolute -right-2 -bottom-8 w-60 rounded-xl border p-4 shadow-lg shadow-black/5 sm:-right-8 dark:shadow-black/40"
+        className="glass absolute -right-2 -bottom-8 w-60 rounded-xl p-4 sm:-right-8"
       >
         <p className="text-mark flex items-center gap-1.5 text-xs font-semibold">
           <MessageSquareText className="size-3.5" />

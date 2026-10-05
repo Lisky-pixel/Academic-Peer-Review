@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Backdrop } from "@/components/backdrop";
 import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 
@@ -12,7 +13,8 @@ export const metadata: Metadata = { title: "Page not found" };
  */
 export default function NotFound() {
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-8 px-6 py-16">
+    <main className="relative isolate mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-8 px-6 py-16">
+      <Backdrop />
       <Brand />
       <div className="space-y-3">
         <h1 className="font-heading text-3xl font-medium tracking-tight">

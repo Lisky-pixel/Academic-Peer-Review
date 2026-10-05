@@ -29,6 +29,26 @@ async function login(page: Page, email: string) {
 
 /** Fails on any violation of WCAG 2.1 A or AA that axe can detect. */
 async function expectNoViolations(page: Page, label: string) {
+  // Pages fade in. Measured mid-fade, the text is still partly transparent and
+  // fails contrast for a moment that no reader experiences. The backdrop
+  // drifts forever and the landing page's sections are tied to scrolling, so
+  // only the timed animations that end are waited for.
+  await page.evaluate(() =>
+    Promise.race([
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+      Promise.all(
+        document
+          .getAnimations()
+          .filter(
+            (animation) =>
+              animation.timeline instanceof DocumentTimeline &&
+              animation.effect?.getComputedTiming().iterations !== Infinity,
+          )
+          .map((animation) => animation.finished.catch(() => undefined)),
+      ),
+    ]),
+  );
+
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     // The framework's own development overlay is not part of the product.

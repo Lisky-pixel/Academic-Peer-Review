@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Newsreader } from "next/font/google";
 import { cookies } from "next/headers";
+import { PointerGlow } from "@/components/pointer-glow";
 import { parseTheme, THEME_COOKIE } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import "./globals.css";
@@ -31,7 +32,10 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       className={cn("font-sans", geist.variable, newsreader.variable, theme)}
       suppressHydrationWarning
     >
-      <body className="bg-background text-foreground min-h-dvh antialiased">{children}</body>
+      <body className="bg-background text-foreground min-h-dvh antialiased">
+        {children}
+        <PointerGlow />
+      </body>
     </html>
   );
 }

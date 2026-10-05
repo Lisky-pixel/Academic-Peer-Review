@@ -51,7 +51,13 @@ export function DocumentPane({
         </Button>
       </div>
 
-      <div className="max-h-[70vh] overflow-y-auto">
+      {/* Focusable, so the preview can be scrolled from the keyboard. */}
+      <div
+        role="group"
+        aria-label={`${label}, scrollable preview`}
+        tabIndex={0}
+        className="focus-visible:ring-ring/50 max-h-[70vh] overflow-y-auto outline-none focus-visible:ring-3 focus-visible:ring-inset"
+      >
         {preview.type === "pdf" && <PdfPreview url={preview.url} />}
         {preview.type === "html" && (
           // An empty sandbox: the converted document can run no script, submit

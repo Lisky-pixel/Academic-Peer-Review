@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Backdrop } from "@/components/backdrop";
 import { Brand } from "@/components/brand";
 import { navFor } from "@/components/nav";
 import { NotificationBell } from "@/components/notification-bell";
@@ -55,7 +56,7 @@ export async function RoleArea({
 
   return (
     <div className="relative isolate flex min-h-dvh flex-col">
-      <div aria-hidden className="app-backdrop" />
+      <Backdrop />
       {/* Frosted ink: the page scrolls beneath the header and shows through. */}
       <header className="bg-panel/90 text-panel-foreground sticky top-0 z-40 border-b border-white/10 backdrop-blur-xl backdrop-saturate-150">
         <div
@@ -107,7 +108,8 @@ export async function RoleArea({
 
       <main
         className={cn(
-          "mx-auto w-full flex-1 px-4 py-10 sm:px-6 sm:py-14",
+          // Eases in as each page arrives.
+          "page-enter mx-auto w-full flex-1 px-4 py-10 sm:px-6 sm:py-14",
           wide ? "max-w-7xl" : "max-w-5xl",
         )}
       >

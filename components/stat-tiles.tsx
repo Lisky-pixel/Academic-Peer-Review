@@ -54,6 +54,7 @@ export function StatTiles({ stats, className }: { stats: Stat[]; className?: str
         return stat.href ? (
           <li key={stat.label}>
             <Link
+              data-glow
               href={stat.href}
               className={cn(
                 box,
@@ -64,7 +65,7 @@ export function StatTiles({ stats, className }: { stats: Stat[]; className?: str
             </Link>
           </li>
         ) : (
-          <li key={stat.label} className={box}>
+          <li key={stat.label} data-glow className={box}>
             {body}
           </li>
         );

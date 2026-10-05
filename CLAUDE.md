@@ -295,8 +295,7 @@ enable` needs admin to write into `Program Files`.
 ## Design
 
 Minimal and modern: generous whitespace, few borders, no decoration that does
-not carry meaning. Signed-in pages are "glass": frosted cards over a soft blue
-backdrop. The theme is "Ink and Cobalt", defined as tokens in
+not carry meaning. Every page is "glass": frosted cards over a soft blue backdrop. The theme is "Ink and Cobalt", defined as tokens in
 `app/globals.css`.
 
 - Navy ink (`primary`) for buttons and the header; a brighter blue (`mark`)
@@ -314,11 +313,27 @@ backdrop. The theme is "Ink and Cobalt", defined as tokens in
   is already correct. There is deliberately no inline theme script (React 19
   warns on script tags in the tree). Check both themes when changing colours.
 - `glass` (a utility in `globals.css`) is the surface for large cards on
-  signed-in pages; `app-backdrop` is the fixed gradient behind them, rendered
-  by `RoleArea`. Small inner cards and reading surfaces (document previews)
+  every page. `<Backdrop />` (`components/backdrop.tsx`) is the fixed backdrop behind them (deliberately still: anything moving under frosted glass is re-blurred every frame, and drifting pools made pages sluggish); its parent needs `relative isolate`. It is rendered by
+  `RoleArea`, the landing page, the auth layout and `not-found`. Add
+  `glass-strong` where text scrolls underneath (the landing header). Small
+  inner cards and reading surfaces (document previews)
   stay solid `bg-card`. Both fall back to solid when the visitor prefers
-  reduced transparency. The light-theme `success` green was darkened to keep
+  reduced transparency. The light-theme `mark` blue and `muted-foreground` grey were darkened so tinted pills and grey text keep 4.5:1 over the blue backdrop. The light-theme `success` green was darkened to keep
   4.5:1 on a tinted pill; re-run the accessibility tests if it changes.
+- **Write `backdrop-filter` only, never `-webkit-backdrop-filter` beside it.**
+  With both written by hand the build kept only the prefixed line, which
+  Chrome ignores, so the glass silently did not blur. The compiler adds the
+  prefix itself.
+- Motion, all in `globals.css` and all switched off under
+  `prefers-reduced-motion`: `page-enter` (content eases in), `reveal`
+  (sections fade up as they scroll in; scroll-driven CSS, so browsers without
+  it just show the content), `float-slow`, and `data-glow` (a light that
+  follows the pointer across a card, driven by the single listener in
+  `components/pointer-glow.tsx`, mounted in the root layout). Buttons lift on
+  hover and press in on click.
+- Changing theme is animated: `ThemeToggle` uses the View Transitions API to
+  spread the new theme as a circle from the switch. Without the API, or with
+  reduced motion, it changes instantly.
 - Signed-in pages render inside `RoleArea` (`components/role-area.tsx`); its
   links come from `components/nav.ts`.
 - Landing-page pictures are drawn in markup (`components/home-visuals.tsx`),
