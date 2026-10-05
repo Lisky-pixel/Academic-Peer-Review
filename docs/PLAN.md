@@ -1,7 +1,7 @@
-> **Status (2026-10-05):** Phases 0 and 1 complete and verified. Phase 2 partly
-> done — `lib/auth/password.ts`, `tokens.ts`, `session.ts` written and tested.
-> Remaining in Phase 2: role guards, middleware, auth pages, invite redemption,
-> rate limiting. Current working context lives in `CLAUDE.md`.
+> **Status (2026-10-05):** Phases 0–2 and 4 complete and verified. Phase 3 is
+> complete except file scrubbing, which moves to Phase 6 (it only applies to
+> reviewer uploads). Next is Phase 5 (admin assignment). Current working
+> context lives in `CLAUDE.md`.
 
 # ReviewFlow — Implementation Plan
 
