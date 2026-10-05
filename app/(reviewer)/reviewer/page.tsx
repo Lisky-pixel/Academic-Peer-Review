@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, CircleCheck, Clock, Inbox, PenLine } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { RoleArea } from "@/components/role-area";
@@ -71,23 +71,27 @@ export default async function ReviewerHomePage({ searchParams }: PageProps<"/rev
         stats={[
           {
             label: "To answer",
+            icon: Inbox,
             value: items.filter(TABS.pending.match).length,
             href: "/reviewer?tab=pending",
             tone: "attention",
           },
           {
             label: "In progress",
+            icon: PenLine,
             value: items.filter(TABS.active.match).length,
             href: "/reviewer?tab=active",
           },
           {
             label: "Overdue",
+            icon: Clock,
             value: items.filter(TABS.overdue.match).length,
             href: "/reviewer?tab=overdue",
             tone: "attention",
           },
           {
             label: "Submitted",
+            icon: CircleCheck,
             value: items.filter(TABS.completed.match).length,
             href: "/reviewer?tab=completed",
           },
@@ -132,7 +136,7 @@ export default async function ReviewerHomePage({ searchParams }: PageProps<"/rev
             {TABS[tab].empty}
           </p>
         ) : (
-          <ul className="border-border bg-card divide-border divide-y overflow-hidden rounded-2xl border">
+          <ul className="glass divide-border divide-y overflow-hidden rounded-2xl">
             {shown.map((item) => {
               const status = statusOf(item);
               return (

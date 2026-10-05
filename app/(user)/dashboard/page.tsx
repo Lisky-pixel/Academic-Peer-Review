@@ -1,4 +1,4 @@
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, CircleCheck, FilePen, Hourglass, Plus, Sparkles } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { RoleArea } from "@/components/role-area";
@@ -41,6 +41,7 @@ export default async function UserDashboardPage() {
           stats={[
             {
               label: "In progress",
+              icon: Hourglass,
               value: submissions.filter((s) =>
                 ["awaiting_reviewer", "with_reviewer", "in_review", "final_checks"].includes(
                   s.stage,
@@ -49,14 +50,19 @@ export default async function UserDashboardPage() {
             },
             {
               label: "Ready to read",
+              icon: Sparkles,
               value: submissions.filter((s) => s.stage === "ready").length,
-              tone: "attention",
             },
             {
               label: "Completed",
+              icon: CircleCheck,
               value: submissions.filter((s) => s.stage === "completed").length,
             },
-            { label: "Drafts", value: submissions.filter((s) => s.stage === "draft").length },
+            {
+              label: "Drafts",
+              icon: FilePen,
+              value: submissions.filter((s) => s.stage === "draft").length,
+            },
           ]}
         />
       )}
@@ -71,7 +77,7 @@ export default async function UserDashboardPage() {
           <NewSubmissionButton />
         </div>
       ) : (
-        <ul className="border-border bg-card divide-border divide-y overflow-hidden rounded-2xl border">
+        <ul className="glass divide-border divide-y overflow-hidden rounded-2xl">
           {submissions.map((submission) => (
             <li key={submission.id}>
               <Link

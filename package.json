@@ -23,7 +23,10 @@
     "db:studio": "prisma studio",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
-    "docker:reset": "docker compose down -v"
+    "docker:reset": "docker compose down -v",
+    "db:seed:reference": "tsx --env-file-if-exists=.env.local prisma/seed.ts --reference-only",
+    "admin:create": "tsx --env-file-if-exists=.env.local scripts/create-admin.ts",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1146.0",
@@ -51,6 +54,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^7.0.1",

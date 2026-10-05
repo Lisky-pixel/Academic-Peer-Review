@@ -126,7 +126,7 @@ export default async function ActivityPage({ searchParams }: PageProps<"/admin/a
             Nothing matches those filters.
           </p>
         ) : (
-          <div className="border-border bg-card overflow-x-auto rounded-2xl border">
+          <div className="glass overflow-x-auto rounded-2xl">
             <table className="w-full min-w-[40rem] text-left text-sm">
               <thead className="text-muted-foreground border-border border-b text-xs">
                 <tr>

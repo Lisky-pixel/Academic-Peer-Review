@@ -28,7 +28,7 @@ export default async function ReportsPage() {
             {received} in the last {REPORT_WEEKS} weeks. Weeks start on Monday.
           </p>
         </div>
-        <div className="border-border bg-card rounded-2xl border p-5 sm:p-6">
+        <div className="glass rounded-2xl p-5 sm:p-6">
           <WeeklyBars weeks={reports.perWeek} unit="submission" />
         </div>
       </section>
@@ -50,7 +50,7 @@ export default async function ReportsPage() {
           className="lg:grid-cols-3"
         />
         {reports.turnaroundByType.length > 0 && (
-          <div className="border-border bg-card overflow-x-auto rounded-2xl border">
+          <div className="glass overflow-x-auto rounded-2xl">
             <table className="w-full min-w-[28rem] text-left text-sm">
               <thead className="text-muted-foreground border-border border-b text-xs">
                 <tr>
@@ -98,7 +98,7 @@ export default async function ReportsPage() {
             There are no active reviewers yet.
           </p>
         ) : (
-          <div className="border-border bg-card overflow-x-auto rounded-2xl border">
+          <div className="glass overflow-x-auto rounded-2xl">
             <table className="w-full min-w-[34rem] text-left text-sm">
               <thead className="text-muted-foreground border-border border-b text-xs">
                 <tr>

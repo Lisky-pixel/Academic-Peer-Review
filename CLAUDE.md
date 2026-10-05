@@ -10,8 +10,33 @@ plan and the verification checklist.
 
 ## Status
 
-Phases 0–9 are complete and verified. Only Phase 10 (hardening and launch)
-remains.
+All ten phases are built. What remains of Phase 10 is the part that needs the
+owner's accounts: provisioning Neon, R2, Resend and Vercel, and the live
+end-to-end check. The steps are in `docs/DEPLOY.md`. Nothing has been
+deployed, and no email has ever been sent through Resend.
+
+Phase 10 (hardening), done in code:
+
+- `proxy.ts` runs on every page: it redirects visitors with no session cookie
+  away from protected areas, and sets a Content Security Policy with a
+  per-request nonce (`script-src 'self' 'nonce-…' 'strict-dynamic'`, no inline
+  or eval scripts in production). Storage is allowed in `connect-src` from
+  `STORAGE_ENDPOINT`. Other headers are in `next.config.ts`.
+- CSRF: every mutation is a server action (origin-checked by Next) and the
+  session cookie is SameSite=Lax. Do not add state-changing GET handlers; the
+  one deliberate exception is that downloading a reviewed file marks it
+  delivered.
+- `app/error.tsx`, `app/not-found.tsx` and `app/global-error.tsx` show plain
+  messages and never the error text.
+- `e2e/accessibility.spec.ts` runs axe (WCAG 2.1 A and AA) over every page in
+  both themes, checks keyboard use of the menus, and fails on any Content
+  Security Policy violation. Run it after any colour or markup change.
+- `pnpm build` passes. To try it locally, the production env checks need real
+  looking values: an https `APP_URL`, non-placeholder secrets and
+  `EMAIL_PROVIDER=resend` with any key.
+- `pnpm db:seed:reference` seeds document types and templates only.
+  `pnpm admin:create` makes the first administrator by printing an invite
+  link. Plain `pnpm db:seed` refuses to run in production.
 
 Phases 3–4 (storage and submissions):
 
@@ -270,7 +295,8 @@ enable` needs admin to write into `Program Files`.
 ## Design
 
 Minimal and modern: generous whitespace, few borders, no decoration that does
-not carry meaning. The theme is "Ink and Cobalt", defined as tokens in
+not carry meaning. Signed-in pages are "glass": frosted cards over a soft blue
+backdrop. The theme is "Ink and Cobalt", defined as tokens in
 `app/globals.css`.
 
 - Navy ink (`primary`) for buttons and the header; a brighter blue (`mark`)
@@ -287,6 +313,12 @@ not carry meaning. The theme is "Ink and Cobalt", defined as tokens in
   on `<html>` and a cookie, which the root layout reads so the first response
   is already correct. There is deliberately no inline theme script (React 19
   warns on script tags in the tree). Check both themes when changing colours.
+- `glass` (a utility in `globals.css`) is the surface for large cards on
+  signed-in pages; `app-backdrop` is the fixed gradient behind them, rendered
+  by `RoleArea`. Small inner cards and reading surfaces (document previews)
+  stay solid `bg-card`. Both fall back to solid when the visitor prefers
+  reduced transparency. The light-theme `success` green was darkened to keep
+  4.5:1 on a tinted pill; re-run the accessibility tests if it changes.
 - Signed-in pages render inside `RoleArea` (`components/role-area.tsx`); its
   links come from `components/nav.ts`.
 - Landing-page pictures are drawn in markup (`components/home-visuals.tsx`),

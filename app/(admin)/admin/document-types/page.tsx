@@ -21,7 +21,7 @@ export default async function DocumentTypesPage() {
       description="The kinds of document authors can submit. Each has its own review template: the criteria a reviewer scores it against."
       current="/admin/document-types"
     >
-      <ul className="border-border bg-card divide-border divide-y overflow-hidden rounded-2xl border">
+      <ul className="glass divide-border divide-y overflow-hidden rounded-2xl">
         {types.map((type) => (
           <li key={type.id}>
             <Link
@@ -48,7 +48,7 @@ export default async function DocumentTypesPage() {
         ))}
       </ul>
 
-      <section className="border-border bg-card rounded-2xl border p-6">
+      <section className="glass rounded-2xl p-6">
         <h2 className="font-heading text-xl font-medium">Add a document type</h2>
         <p className="text-muted-foreground mt-1 mb-5 text-sm leading-relaxed">
           It starts with a basic template of four criteria, which you can then change.

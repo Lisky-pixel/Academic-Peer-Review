@@ -108,7 +108,7 @@ function ReviewResult({ submissionId, review }: { submissionId: string; review: 
       </div>
 
       {review.reviewedFile && (
-        <div className="border-border bg-card flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-5">
+        <div className="glass flex flex-wrap items-center justify-between gap-4 rounded-2xl p-5">
           <span className="flex min-w-0 items-center gap-3">
             <span className="bg-mark/10 text-mark flex size-11 shrink-0 items-center justify-center rounded-xl">
               <FileText aria-hidden className="size-5" strokeWidth={1.75} />
@@ -165,7 +165,7 @@ function Progress({ submission }: { submission: UserSubmissionDTO }) {
   const reached = progressOf(submission.stage);
 
   return (
-    <section aria-label="Progress" className="border-border bg-card rounded-2xl border p-6 sm:p-8">
+    <section aria-label="Progress" className="glass rounded-2xl p-6 sm:p-8">
       <ol className="grid gap-5 sm:grid-cols-5 sm:gap-3">
         {PROGRESS_STEPS.map((step, index) => {
           const done = index + 1 < reached || submission.stage === "completed";

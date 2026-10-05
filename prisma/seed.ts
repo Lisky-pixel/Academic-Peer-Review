@@ -428,10 +428,25 @@ async function seedAccounts() {
 }
 
 async function main() {
-  console.log("Seeding ReviewFlow…\n");
+  // --reference-only seeds what a real deployment needs (settings, document
+  // types and their review templates) and nothing else. Without it, the known
+  // development accounts are created too — every one of which has a password
+  // published in this repository.
+  const referenceOnly = process.argv.includes("--reference-only");
+
+  if (!referenceOnly && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Refusing to create development accounts in production. " +
+        "Run `pnpm db:seed:reference` instead, then `pnpm admin:create`.",
+    );
+  }
+
+  console.log(`Seeding ReviewFlow${referenceOnly ? " (reference data only)" : ""}…\n`);
 
   await seedSettings();
   await seedDocumentTypes();
+  if (referenceOnly) return;
+
   await seedAccounts();
 
   console.log(`\nAll accounts use the password: ${DEV_PASSWORD}`);

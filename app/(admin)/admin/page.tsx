@@ -1,4 +1,12 @@
-import { ChevronRight } from "lucide-react";
+import {
+  CircleCheck,
+  ClipboardCheck,
+  ChevronRight,
+  Clock,
+  Inbox,
+  PackageOpen,
+  Users,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { RoleArea } from "@/components/role-area";
@@ -91,20 +99,32 @@ export default async function AdminHomePage({ searchParams }: PageProps<"/admin"
         stats={[
           {
             label: "Need a reviewer",
+            icon: Inbox,
             value: counts.needsReviewer,
             href: "/admin",
             tone: "attention",
           },
-          { label: "With reviewers", value: counts.withReviewers, href: "/admin?view=active" },
+          {
+            label: "With reviewers",
+            icon: Users,
+            value: counts.withReviewers,
+            href: "/admin?view=active",
+          },
           {
             label: "Need approval",
+            icon: ClipboardCheck,
             value: counts.needsApproval,
             href: "/admin?view=approval",
             tone: "attention",
           },
-          { label: "Overdue reviews", value: counts.overdueReviews, tone: "attention" },
-          { label: "Not yet collected", value: counts.awaitingCollection },
-          { label: "Delivered", value: counts.delivered },
+          {
+            label: "Overdue reviews",
+            icon: Clock,
+            value: counts.overdueReviews,
+            tone: "attention",
+          },
+          { label: "Not yet collected", icon: PackageOpen, value: counts.awaitingCollection },
+          { label: "Delivered", icon: CircleCheck, value: counts.delivered },
         ]}
       />
 
@@ -161,7 +181,7 @@ export default async function AdminHomePage({ searchParams }: PageProps<"/admin"
             {filtered ? "Nothing matches those filters." : empty}
           </p>
         ) : (
-          <ul className="border-border bg-card divide-border divide-y overflow-hidden rounded-2xl border">
+          <ul className="glass divide-border divide-y overflow-hidden rounded-2xl">
             {submissions.map((submission) => (
               <li key={submission.id}>
                 <Link

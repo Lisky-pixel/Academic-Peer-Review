@@ -21,6 +21,9 @@ export default defineConfig({
     seed: "tsx --env-file-if-exists=.env.local prisma/seed.ts",
   },
   datasource: {
-    url: env("DATABASE_URL"),
+    // Migrations take locks that a connection pooler (Neon's pooled string)
+    // does not pass through reliably. When a direct connection is provided it
+    // is used for the CLI; the running application always uses DATABASE_URL.
+    url: process.env.DIRECT_DATABASE_URL || env("DATABASE_URL"),
   },
 });

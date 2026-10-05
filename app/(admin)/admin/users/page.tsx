@@ -96,7 +96,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
             Nobody matches those filters.
           </p>
         ) : (
-          <ul className="border-border bg-card divide-border divide-y rounded-2xl border">
+          <ul className="glass divide-border divide-y rounded-2xl">
             {users.map((user) => (
               <li
                 key={user.id}

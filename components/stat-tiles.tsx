@@ -1,9 +1,11 @@
+import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 export type Stat = {
   label: string;
   value: number | string;
+  icon?: LucideIcon;
   /** Makes the tile a link, e.g. to the list filtered to what it counts. */
   href?: string;
   /** "attention" draws the eye when the number is something to act on. */
@@ -11,8 +13,9 @@ export type Stat = {
 };
 
 /**
- * A row of headline numbers. Each is a plain figure with a label — where a
- * single number is the whole story, a chart would only slow the reader down.
+ * A row of headline numbers on frosted tiles. Each is a plain figure with a
+ * label — where a single number is the whole story, a chart would only slow
+ * the reader down.
  */
 export function StatTiles({ stats, className }: { stats: Stat[]; className?: string }) {
   return (
@@ -25,20 +28,28 @@ export function StatTiles({ stats, className }: { stats: Stat[]; className?: str
     >
       {stats.map((stat) => {
         const attention = stat.tone === "attention" && stat.value !== 0;
+        const Icon = stat.icon;
         const body = (
           <>
-            <span className="text-muted-foreground block text-sm">{stat.label}</span>
-            <span
-              className={cn(
-                "font-heading mt-1 block text-3xl font-medium tabular-nums",
-                attention && "text-warning",
-              )}
-            >
+            {Icon && (
+              <span
+                className={cn(
+                  "mb-4 flex size-9 items-center justify-center rounded-xl",
+                  attention ? "bg-warning/15 text-warning" : "bg-mark/10 text-mark",
+                )}
+              >
+                <Icon aria-hidden className="size-[18px]" strokeWidth={1.75} />
+              </span>
+            )}
+            <span className="font-heading block text-3xl leading-none font-medium tabular-nums sm:text-4xl">
               {stat.value}
+            </span>
+            <span className="text-muted-foreground mt-2 block text-sm leading-snug">
+              {stat.label}
             </span>
           </>
         );
-        const box = "border-border bg-card block rounded-2xl border p-4 sm:p-5";
+        const box = "glass block h-full rounded-2xl p-4 sm:p-5";
 
         return stat.href ? (
           <li key={stat.label}>
@@ -46,7 +57,7 @@ export function StatTiles({ stats, className }: { stats: Stat[]; className?: str
               href={stat.href}
               className={cn(
                 box,
-                "hover:border-ring focus-visible:border-ring transition-colors outline-none",
+                "focus-visible:ring-ring/40 transition-transform duration-200 outline-none hover:-translate-y-0.5 focus-visible:ring-3 motion-reduce:transition-none motion-reduce:hover:translate-y-0",
               )}
             >
               {body}

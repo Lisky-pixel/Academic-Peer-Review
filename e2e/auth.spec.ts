@@ -1334,7 +1334,7 @@ test("the reports and dashboards render from real data", async ({ page }) => {
   await loginAsAdmin(page);
 
   // The admin dashboard tiles link to the lists they count.
-  const needApproval = page.getByRole("link", { name: /^Need approval \d+$/ });
+  const needApproval = page.getByRole("link", { name: /^\d+\s*Need approval$/ });
   await expect(needApproval).toBeVisible();
   await needApproval.click();
   await expect(page).toHaveURL(/view=approval/);
@@ -1360,7 +1360,7 @@ test("the reports and dashboards render from real data", async ({ page }) => {
   // The reviewer and the author each get their own headline numbers.
   await login(page, "reviewer1@reviewflow.local");
   await expect(page).toHaveURL(/\/reviewer$/);
-  await expect(page.getByRole("link", { name: /^Submitted \d+$/ }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: /^\d+\s*Submitted$/ }).first()).toBeVisible();
   await signOut(page);
 
   await login(page, "user1@reviewflow.local");

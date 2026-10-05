@@ -1,6 +1,6 @@
-> **Status (2026-10-05):** Phases 0–9 complete and verified. Only Phase 10
-> (hardening and launch) remains. Current working context lives in
-> `CLAUDE.md`.
+> **Status (2026-10-05):** All ten phases are built and verified locally. The
+> remaining work is deployment, which needs the owner's accounts: follow
+> `docs/DEPLOY.md`. Current working context lives in `CLAUDE.md`.
 
 # ReviewFlow — Implementation Plan
 

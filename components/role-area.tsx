@@ -54,8 +54,10 @@ export async function RoleArea({
   ]);
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="bg-panel text-panel-foreground border-border sticky top-0 z-40 border-b">
+    <div className="relative isolate flex min-h-dvh flex-col">
+      <div aria-hidden className="app-backdrop" />
+      {/* Frosted ink: the page scrolls beneath the header and shows through. */}
+      <header className="bg-panel/90 text-panel-foreground sticky top-0 z-40 border-b border-white/10 backdrop-blur-xl backdrop-saturate-150">
         <div
           className={cn(
             "mx-auto flex h-16 items-center justify-between gap-4 px-4 sm:px-6",
