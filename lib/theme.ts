@@ -8,7 +8,7 @@
  *
  * Not a secret and not httpOnly: the switch in the browser writes it.
  */
-export const THEME_COOKIE = "reviewflow-theme";
+export const THEME_COOKIE = "apr-theme";
 
 export type Theme = "light" | "dark";
 
