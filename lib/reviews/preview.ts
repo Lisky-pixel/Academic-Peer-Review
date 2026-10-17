@@ -28,7 +28,7 @@ export type DocumentPreview =
 const MAX_INLINE_BYTES = 10 * 1024 * 1024;
 const MAX_TEXT_CHARS = 500_000;
 
-/** The author's document, for a reviewer who currently holds the submission. */
+/** The paper, for a reviewer it has been given to. */
 export async function findDocumentPreview(
   reviewerId: string,
   submissionId: string,
@@ -36,7 +36,13 @@ export async function findDocumentPreview(
   const file = await db.storedFile.findFirst({
     where: {
       kind: "ORIGINAL",
-      submission: { id: submissionId, assignments: { some: { reviewerId, isActive: true } } },
+      submission: {
+        id: submissionId,
+        status: { not: "WITHDRAWN" },
+        assignments: {
+          some: { reviewerId, status: { in: ["PENDING", "ACCEPTED", "COMPLETED"] } },
+        },
+      },
     },
     orderBy: { createdAt: "desc" },
     select: { storageKey: true, originalFilename: true, sizeBytes: true },

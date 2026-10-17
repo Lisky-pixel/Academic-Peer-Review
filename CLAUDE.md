@@ -1,208 +1,103 @@
 @AGENTS.md
 
-# ReviewFlow — working context
+# Academic Peer Review — working context
 
-Document review platform: users submit written work, an admin assigns a
-reviewer, the reviewer returns structured feedback and an annotated file, and
-the admin approves it before the user sees it. **Reviewers are anonymous to
-users.** See `README.md` for setup and `docs/PLAN.md` for the full 10-phase
-plan and the verification checklist.
+Peer review for academic conferences (formerly "ReviewFlow", a general
+document-review tool; the repository folder still has the old name). The
+owner's market is the academic conference sector in emerging markets, part of
+the wider conference and events (MICE) industry. Competitors named by the
+owner: EventsAir, Four Waves. Peer review comes first; registration, tickets
+and programmes are not in scope.
+
+The flow: an administrator creates a conference and attaches its organisers.
+Submitters send papers to open calls. When the call closes (or an organiser
+clicks "Match reviewers now"), each paper is matched automatically to
+reviewers in its discipline. Reviewers score it 1–5, recommend it or not,
+comment, and may upload a marked-up copy. If reviews disagree, a tie-breaker
+reviewer is added. Organisers accept or reject; the submitter is emailed and
+reads every review, with reviewers anonymous.
 
 ## Status
 
-All ten phases are built. What remains of Phase 10 is the part that needs the
-owner's accounts: provisioning Neon, R2, Resend and Vercel, and the live
-end-to-end check. The steps are in `docs/DEPLOY.md`. Nothing has been
-deployed, and no email has ever been sent through Resend.
+The rebuild for conferences is done and verified locally (October 2026): all
+pages for the four roles, the demo seed, unit and database tests (including
+`lib/workflow/flow.db.test.ts`, the whole journey), and the accessibility
+suite. Nothing is deployed yet; `docs/DEPLOY.md` has the steps. No email has
+ever been sent through Resend.
 
-Phase 10 (hardening), done in code:
+Not built yet, agreed for after the first demo: online payment for organiser
+packages (payments are recorded by an administrator, which emails a receipt),
+a browser test of the full flow, and admin management of the disciplines list
+(it is seeded).
 
-- `proxy.ts` runs on every page: it redirects visitors with no session cookie
-  away from protected areas, and sets a Content Security Policy with a
-  per-request nonce (`script-src 'self' 'nonce-…' 'strict-dynamic'`, no inline
-  or eval scripts in production). Storage is allowed in `connect-src` from
-  `STORAGE_ENDPOINT`. Other headers are in `next.config.ts`.
-- CSRF: every mutation is a server action (origin-checked by Next) and the
-  session cookie is SameSite=Lax. Do not add state-changing GET handlers; the
-  one deliberate exception is that downloading a reviewed file marks it
-  delivered.
-- `app/error.tsx`, `app/not-found.tsx` and `app/global-error.tsx` show plain
-  messages and never the error text.
-- `e2e/accessibility.spec.ts` runs axe (WCAG 2.1 A and AA) over every page in
-  both themes, checks keyboard use of the menus, and fails on any Content
-  Security Policy violation. Run it after any colour or markup change.
-- `pnpm build` passes. To try it locally, the production env checks need real
-  looking values: an https `APP_URL`, non-placeholder secrets and
-  `EMAIL_PROVIDER=resend` with any key.
-- `pnpm db:seed:reference` seeds document types and templates only.
-  `pnpm admin:create` makes the first administrator by printing an invite
-  link. Plain `pnpm db:seed` refuses to run in production.
+## How it fits together
 
-Phases 3–4 (storage and submissions):
+- **Roles** (`Role`): `USER` is a submitter; `REVIEWER` reviews and can also
+  submit; `ORGANISER` runs the conferences they are attached to
+  (`ConferenceOrganiser`); `ADMIN` runs the platform and acts as organiser of
+  any conference. Homes: `/dashboard`, `/reviewer`, `/organiser`, `/admin`
+  (`HOME_PATH`). A new area must also go in `proxy.ts`'s protected list.
+- **Signup** (`lib/auth/registration.ts`) chooses submitter or reviewer. A
+  reviewer gives rank, years, expertise and disciplines (`ReviewerProfile`).
+  Organisers and administrators exist only by invitation. A submitter becomes
+  a reviewer from their profile. `/register` must still answer the same way
+  whether or not the address is taken.
+- **Conferences** (`lib/conferences`): created by administrators at
+  `/admin/conferences`. Settings: dates (call opens/closes, reviews due),
+  reviewers per paper (1–3), papers per reviewer (2–5), double-blind or not,
+  full paper or abstract only, topics, package name and paper limit.
+  Organiser pages are `/organiser/conferences/[id]` (papers, reviewers,
+  reports, Excel export) and `.../papers/[paperId]` (reviews, add/remove
+  reviewer, decision). `requireOrganiserOf()` guards them.
+- **Papers** (`lib/submissions`): fields are title, authors, contact email,
+  institution, topic (conference list or Other), discipline (platform list or
+  Other), type, abstract, file. Editable while `DRAFT` or `SUBMITTED`; locked
+  once reviewers have it. Uploaded files (PDF/DOCX only) are scrubbed of names
+  in their metadata, labelled "Author", before being stored.
+- **Matching** (`lib/matching`): rules are pure functions in `select.ts`
+  (never the submitter, never anyone already asked, never the same
+  institution, never over the conference workload limit, only the paper's
+  discipline unless it is Other, least busy first, random ties). Every
+  assigning transaction holds a per-conference advisory lock.
+  `settleReviews()` decides what happens when reviews change: wait, add a
+  tie-breaker (recommendations split or scores ≥2 apart, once), or mark the
+  reviews complete.
+- **Reviews** (`lib/reviews`): accept or decline (a conflict of interest is a
+  decline with a flag); declining finds a replacement at once. A sent review
+  cannot be changed. Marked-up copies are scrubbed, labelled "Reviewer".
+- **Decisions**: organisers decide from `UNDER_REVIEW` or `REVIEWS_COMPLETE`;
+  open assignments are cancelled. Submitters see every review only after a
+  decision (`findOwnReviews`), as "Reviewer 1, 2, 3".
+- **Daily job** (`lib/maintenance`, `/api/cron/maintenance`): matches
+  conferences whose call has closed, sends reminders 7, 3 and 1 days before a
+  review is due (`Assignment.remindersSent`), tells organisers about overdue
+  reviews, retries email, cleans up.
+- **Email**: workflow notices go through the outbox (`queueNotices`); wording
+  is all in `lib/notifications/messages.ts`. Addresses ending `.invalid` are
+  never sent through Resend: the demo accounts use them.
+- **Help** (`/help`): questions and a contact form that emails every
+  administrator.
+- **Seed**: `pnpm db:seed` (dev: disciplines, accounts, two demo conferences
+  driven through the real workflow), `pnpm db:seed:reference` (disciplines
+  only), `pnpm db:seed:demo` (demo data on a live site; needs `DEMO_PASSWORD`;
+  accounts are `<role>@demo.invalid`).
 
-- `lib/storage` is the `StorageProvider` interface with one S3 implementation
-  for R2 and MinIO. Document bytes never pass through the app: the browser
-  PUTs to a signed URL (`prepareUpload`), then the server fetches the object
-  and checks its real size and magic bytes (`confirmUpload`) before recording
-  it. Downloads redirect to a signed, attachment-only URL.
-- `lib/files/validate.ts` decides what is accepted (PDF, DOCX, DOC, RTF, TXT;
-  extension + declared type + size + magic bytes).
-- `lib/workflow/transitions.ts` is the legal-move table (pure, fully tested);
-  `lib/workflow/state-machine.ts` `transition()` is the only code that changes
-  `Submission.status`. Extra writes for a move go in its `apply` callback so
-  they share the transaction.
-- `lib/submissions` is the author side. Every query is scoped to the author.
-- Authors never see the internal status: `toUserSubmissionDTO()` exposes an
-  `AuthorStage` (`lib/submissions/stage.ts`) so internal bounces do not show.
-- Author pages are under `/dashboard/submissions`.
+## Still true from the original build
 
-Phase 5 (assignment), in `lib/assignments`:
-
-- `assignReviewer` / `reassignReviewer` call `transition()` and write the
-  `Assignment` rows in its `apply` hook. Reassigning retires the old row
-  (`isActive: null`, `CANCELLED`) and needs a reason; history is never
-  overwritten.
-- `/admin` lists submitted work, filterable by status, type and deadline;
-  `/admin/submissions/[id]` is the detail page with the reviewer picker
-  (live workload per reviewer), the author-visibility switch, and the audit
-  trail. `lib/dto/assignment.ts` holds the admin-only DTOs — they carry
-  reviewer identity and must never reach an author page.
-  Phase 6 (reviewer workspace), in `lib/reviews`:
-
-- `/reviewer` is the queue (to answer / in progress / overdue / submitted);
-  `/reviewer/reviews/[id]` is the invitation, then the split-pane workspace,
-  then a read-only summary. Every query is scoped to submissions the reviewer
-  currently holds (`isActive` assignment).
-- The first autosave starts the review (`ACCEPTED` → `IN_REVIEW`) and pins it
-  to the template that was active then. Autosave sends only changed criteria.
-- **`lib/files/scrub.ts` removes the reviewer's identity from file bytes**:
-  Word document properties, every `w:author` on tracked changes and
-  comments, `people.xml`; PDF Info entries, the XMP stream and every
-  annotation's `/T`. It fails closed. `scrub.test.ts` is the guardrail —
-  extend it whenever a new place a name can hide is found.
-- Reviewers may only return PDF, DOCX or TXT, because only those can be
-  scrubbed. `confirmAnnotatedUpload` stores **only** the scrubbed copy, named
-  from the reference, with `scrubbedAt` set; the raw upload is always deleted.
-  Any author-facing download of an `ANNOTATED` file (Phase 7) must refuse a
-  row without `scrubbedAt`.
-- `toReviewerSubmissionDTO()` in `lib/dto/review.ts` is the only place
-  `authorVisibleToReviewer` is resolved. When the author is hidden, the
-  document's filename is replaced by the reference too.
-- Preview: PDF via PDF.js in the browser; DOCX converted by Mammoth on the
-  server and shown in an `<iframe sandbox="">` (never inserted into our DOM);
-  TXT as text. DOC and RTF have no preview.
-- `Review.overallFeedback` is unused: overall feedback is the last criterion
-  of every template.
-
-Phase 7 (approval and delivery), in `lib/approvals`:
-
-- The approval screen is the top of `/admin/submissions/[id]`: the author's
-  document and the scrubbed annotated copy side by side, the answers, then
-  approve or send back. `approveReview` and `requestRevision` go through
-  `transition()`; each writes an `AdminDecision`. A revision reopens the
-  review (`DRAFT`, `revisionRound` + 1) and keeps the reviewer's answers.
-- `approveReview` refuses unless the annotated file has `scrubbedAt`, and the
-  author-facing query (`findOwnReview`) only matches approved submissions and
-  scrubbed files. Both checks are deliberate repeats of earlier ones.
-- **`toUserReviewDTO()` in `lib/dto/approval.ts` is the author-facing review.**
-  `reviewer` is the literal "Anonymous"; admin notes to the reviewer are not
-  in it. Its field list is locked by a test.
-- `DELIVERED` is set by `markDelivered`, called from the browser
-  (`DeliveryBeacon`) once the review is on screen, or by downloading the
-  reviewed file — never during server render, so a prefetch cannot deliver.
-- `components/document-pane.tsx` and `components/review-answers.tsx` are
-  shared by reviewer, admin and author views.
-
-Phase 8 (notifications):
-
-- **Two kinds of email, on purpose.** Workflow notifications go through the
-  outbox: `queueNotices(tx, …)` (`lib/notifications`) writes the
-  `Notification` row and a `QUEUED` `EmailLog` row with its content, inside
-  the transaction of the event. Account emails (reset, invite, verification)
-  use `sendEmail` directly and are logged **without** a body, because the
-  body holds a secret link; they are never retried.
-- `lib/email/outbox.ts` `dispatchQueuedEmails` sends the queue, claiming each
-  row with a conditional update so concurrent runs never double-send, with
-  back-off and a cap of five attempts. `transition()` kicks it after commit
-  (via `after()`); it does nothing when `NODE_ENV` is `test`.
-- **All wording lives in `lib/notifications/messages.ts`.** Author-facing
-  builders take only `{ id, reference, title }`, so they cannot name a
-  reviewer. Add new notifications there, not inline.
-- One layout, `lib/email/template.tsx` (react-email). Preview every email at
-  `/dev/emails` (development only).
-- The bell (`components/notification-bell.tsx`) is rendered by `RoleArea`.
-  Opening a notification goes through a server action that looks the link up
-  for the signed-in user; the browser is never given a URL to trust.
-- `lib/maintenance` `runMaintenance` is the scheduled job: deadline
-  reminders (once per assignment), overdue escalation to admins (once per
-  assignment per admin), email retry, and clean-up of sessions, rate limits,
-  dead tokens and stale registrations. It is exposed at
-  `/api/cron/maintenance`, which requires `Authorization: Bearer $CRON_SECRET`
-  and is scheduled daily in `vercel.json`.
-- Functions that scan the whole database (`dispatchQueuedEmails`,
-  `sendDeadlineReminders`, `escalateOverdueReviews`) take an optional scope so
-  tests touch only their own rows. Always pass one in a test.
-
-Phase 9 (dashboards and admin management), in `lib/admin`:
-
-- **The SRS is not in this repository**, so "the dashboards exactly as
-  specified in SRS §11" could not be checked. The headline numbers on the
-  three dashboards (`StatTiles`) are a reasonable reading; compare them with
-  the SRS before launch.
-- `/admin/users`: search, filter, suspend, reactivate. Accounts are suspended,
-  never deleted. Suspending ends every session at once; you cannot suspend
-  yourself or the last active administrator. Roles cannot be changed here —
-  reviewers and admins still come only from invitations.
-- `/admin/document-types`: add, rename, withdraw. **Templates are versioned:**
-  `publishTemplate` never edits criteria, it inserts a new version and retires
-  the old one, so finished and in-progress reviews keep their questions.
-  Publishing with no change writes nothing.
-- `/admin/activity`: the audit log with filters and paging. Add a label in
-  `lib/dto/admin.ts` `actionLabel` for every new logged action.
-- `/admin/reports`: submissions per week, turnaround, reviewer throughput,
-  computed live. The arithmetic is in pure functions in `lib/admin/reports.ts`.
-- The one chart (`components/weekly-bars.tsx`) is a single series in the
-  accent blue with exact values on hover or focus and a table view. Keep any
-  new chart to those rules: one axis, text in text colours, a table fallback.
-- An admin has six nav links, so `RoleArea` puts navigation on its own row
-  whenever there are more than three.
-
-Known limits, deliberately left:
-
-- Hiding the author hides their name and filename, **not** what is inside
-  their document or its metadata. A CV names its author regardless.
-- Scrubbing removes metadata, not a name a reviewer types into a comment.
-  The admin reads every review before release and is the check on that.
-- The schedule is once a day (the limit on Vercel's free plan), so a reminder
-  can be up to a day late and failed mail is retried at most daily unless
-  another event queues mail first.
-- The bell shows what was true when the page loaded; it does not update live.
-- Orphaned uploads (prepared, never confirmed) are not yet cleaned from
-  storage.
-- **Production needs a CORS rule on the R2 bucket** allowing `PUT` from the
-  app origin with the `Content-Type` header. MinIO allows all origins by
-  default, so this does not show up in development.
-- Uploads that are prepared but never confirmed leave orphan objects; a
-  cleanup belongs in the Phase 8 maintenance job.
-
-Phase 2 (auth) lives in `lib/auth/`, `lib/rate-limit/`, `app/(auth)/` and
-`proxy.ts`:
-
-- Every protected page and server action starts with `requireRole()` /
-  `requireUser()` / `requireOwnership()` from `lib/auth/guards.ts`. `proxy.ts`
-  only checks that a session cookie is present; it is not the enforcement.
-- Role areas are `/dashboard` (USER), `/reviewer`, `/admin` — see `HOME_PATH`
-  in `lib/auth/routes.ts`. A new area must also be added to the `proxy.ts`
-  matcher. The three pages there are placeholders. `/profile` is shared.
-- Registration is two steps (`lib/auth/registration.ts`): `/register` stores
-  the account as `UNVERIFIED` and always answers "check your inbox";
-  `/verify-email/[token]` activates it and needs the password as well as the
-  link. Never make `/register` respond differently for a taken address.
-- `/admin/invites` sends, resends and cancels invitations. Full user
-  management is still Phase 9.
-- The Resend branch of `lib/email` is pinned by `email.test.ts` against a
-  mocked `fetch` but has **never been run against the live API** — do one
-  real send when the key and domain exist.
+- `proxy.ts` checks only that a session cookie exists and sets a per-request
+  CSP nonce; the guards in `lib/auth/guards.ts` are the enforcement. Every
+  mutation is a server action; do not add state-changing GET handlers.
+- Document bytes never pass through the app: the browser PUTs to a signed
+  URL, then the server checks size and magic bytes (`lib/files/validate.ts`)
+  and scrubs (`lib/files/scrub.ts`, fails closed). Downloads redirect to a
+  signed, attachment-only URL.
+- **Production needs a CORS rule on the R2 bucket** allowing `GET`, `PUT`
+  and `HEAD` from the app origin with the `Content-Type` header.
+- Known limits: scrubbing removes names from metadata, not names typed into
+  the text; the schedule is daily (Vercel free plan); the bell does not update
+  live; prepared-but-unconfirmed uploads leave orphan objects.
+- `e2e/accessibility.spec.ts` runs axe over every page in both themes and
+  fails on any CSP violation. Run it after any colour or markup change.
 
 ## Two rules that must not be broken
 
@@ -211,24 +106,24 @@ Phase 2 (auth) lives in `lib/auth/`, `lib/rate-limit/`, `app/(auth)/` and
    role, writes the activity log, and queues notifications in one transaction.
 
 2. **Never return a Prisma entity to a page or route.** Map it through
-   `lib/dto/` first. `toUserSubmissionDTO()` has no reviewer field in its return
+   `lib/dto/` first. `toUserPaperDTO()` and `toUserReviewDTOs()` have no reviewer field in their return
    _type_, which is what makes an anonymity leak a compile error rather than a
    production incident. Reviewer identity must also stay out of user-facing
    emails and out of downloaded file bytes (`lib/files/scrub.ts`).
 
 ## Decisions already made — do not relitigate
 
-| Area              | Decision                                                                                                                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Architecture      | Next.js full-stack, App Router; route handlers + server actions are the backend                                                                                                |
-| Database          | Neon (prod) / Docker Postgres (dev), via Prisma + `@prisma/adapter-pg`                                                                                                         |
-| Storage           | Cloudflare R2 (prod) / MinIO (dev), behind `lib/storage`                                                                                                                       |
-| Email             | Resend on a verified domain (prod) / Mailpit (dev), behind `lib/email`                                                                                                         |
-| Auth              | Hand-rolled DB sessions: argon2id, httpOnly cookies, own guards. No Auth.js, no Clerk                                                                                          |
-| Reviewer accounts | **Admin invite only.** A public reviewer signup route must never exist; `/register` always creates `role: USER`                                                                |
-| Anonymity         | Reviewer always hidden from the author. Author visibility to the reviewer is the per-submission `authorVisibleToReviewer` toggle, resolved only in `toReviewerSubmissionDTO()` |
-| Document viewing  | In-browser preview (PDF.js for PDF, Mammoth for .docx) plus download                                                                                                           |
-| Purpose           | A real tool for real use — reliability over feature count                                                                                                                      |
+| Area              | Decision                                                                                                                                                                                |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Architecture      | Next.js full-stack, App Router; route handlers + server actions are the backend                                                                                                         |
+| Database          | Neon (prod) / Docker Postgres (dev), via Prisma + `@prisma/adapter-pg`                                                                                                                  |
+| Storage           | Cloudflare R2 (prod) / MinIO (dev), behind `lib/storage`                                                                                                                                |
+| Email             | Resend on a verified domain (prod) / Mailpit (dev), behind `lib/email`                                                                                                                  |
+| Auth              | Hand-rolled DB sessions: argon2id, httpOnly cookies, own guards. No Auth.js, no Clerk                                                                                                   |
+| Reviewer accounts | Reviewers sign up themselves (owner's decision, Oct 2026) or are invited; organisers and admins only by invitation                                                                      |
+| Anonymity         | Reviewers are always anonymous to submitters. Authors are hidden from reviewers when the conference is double-blind (`Conference.doubleBlind`), resolved only in `toReviewerPaperDTO()` |
+| Document viewing  | In-browser preview (PDF.js for PDF, Mammoth for .docx) plus download                                                                                                                    |
+| Purpose           | A real tool for real use — reliability over feature count                                                                                                                               |
 
 ## Environment facts that cost time to discover
 
@@ -355,6 +250,7 @@ not carry meaning. Every page is "glass": frosted cards over a soft blue backdro
 
 ## Dev accounts
 
-All seeded accounts use `Password123!`:
-`admin@reviewflow.local`, `reviewer1@` / `reviewer2@`, `user1@` / `user2@` / `user3@`
-(all `@reviewflow.local`).
+All seeded accounts use `Password123!`, at `@apr.local`: `admin`,
+`organiser`, `reviewer1`…`reviewer8` (disciplines and institutions differ),
+`user1`…`user3`. Re-seed from scratch with `pnpm db:reset` then
+`pnpm db:seed`; Prisma asks for explicit consent before resetting.

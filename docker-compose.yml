@@ -1,4 +1,4 @@
-# Local development stack for ReviewFlow.
+# Local development stack for Academic Peer Review.
 #
 # Each service is the local stand-in for a production one, chosen so the
 # application code is identical in both places:

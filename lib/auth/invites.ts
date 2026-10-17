@@ -8,7 +8,8 @@ import { sendEmail } from "@/lib/email";
 import { env } from "@/lib/env";
 
 /**
- * Invitations — the only way a reviewer or admin account comes to exist.
+ * Invitations — the only way an organiser or administrator account comes to
+ * exist, and one of two ways for a reviewer (the other is signing up).
  *
  * An invite is a User row in status INVITED with no password, plus a
  * single-use token emailed to them. Redeeming the token sets the password and
@@ -18,14 +19,21 @@ import { env } from "@/lib/env";
 
 export const INVITE_TTL_HOURS = 72;
 
-type InvitableRole = "REVIEWER" | "ADMIN";
+export type InvitableRole = "REVIEWER" | "ORGANISER" | "ADMIN";
+
+const ROLE_PHRASE: Record<InvitableRole, string> = {
+  REVIEWER: "a reviewer",
+  ORGANISER: "a conference organiser",
+  ADMIN: "an administrator",
+};
 
 export type CreateInviteResult =
   { ok: true; userId: string; token: string } | { ok: false; reason: "email_taken" };
 
 /**
- * Creates (or re-sends) an invitation. `invitedBy` must already have been
- * through `requireRole("ADMIN")` — this function trusts its caller.
+ * Creates (or re-sends) an invitation. The caller must already have checked
+ * that `invitedBy` may invite this role: administrators may invite anyone,
+ * organisers only reviewers. This function trusts its caller.
  *
  * Inviting an address that is still INVITED issues a fresh link and kills the
  * old one, which is how an admin re-sends an invite that expired.
@@ -71,7 +79,7 @@ export async function createInvite(input: {
 
   const token = await issueToken(user.id, "INVITE", INVITE_TTL_HOURS);
   const link = `${env.APP_URL}/invite/${token}`;
-  const roleLabel = input.role === "ADMIN" ? "an administrator" : "a reviewer";
+  const roleLabel = ROLE_PHRASE[input.role];
 
   await sendEmail({
     to: email,
@@ -142,6 +150,8 @@ export async function resendInvite(userId: string, invitedBy: SessionUser): Prom
     select: { email: true, name: true, role: true },
   });
   if (!invitee || invitee.role === "USER") return false;
+  // An organiser can only re-send what they could have sent.
+  if (invitedBy.role !== "ADMIN" && invitee.role !== "REVIEWER") return false;
 
   const result = await createInvite({
     email: invitee.email,

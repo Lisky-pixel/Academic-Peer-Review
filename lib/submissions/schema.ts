@@ -1,62 +1,97 @@
 import { z } from "zod";
 
-/** Trimmed free text that is stored as null when left empty. */
-const optionalText = (max: number, tooLong: string) =>
-  z
-    .string()
-    .trim()
-    .max(max, tooLong)
-    .transform((value) => value || null);
+/** What "Other" is sent as from a topic or discipline list. */
+export const OTHER = "__other__";
+
+export const PAPER_TYPES = ["QUANTITATIVE", "QUALITATIVE", "CONCEPTUAL", "REVIEW"] as const;
+
+export const PAPER_TYPE_LABEL: Record<(typeof PAPER_TYPES)[number], string> = {
+  QUANTITATIVE: "Quantitative",
+  QUALITATIVE: "Qualitative",
+  CONCEPTUAL: "Conceptual",
+  REVIEW: "Review",
+};
+
+export const ABSTRACT_MAX = 5000;
+
+const text = (min: number, max: number, empty: string, long: string) =>
+  z.string().trim().min(min, empty).max(max, long);
 
 /**
- * A deadline arrives from a date input as "YYYY-MM-DD". It is stored as the
- * end of that day in UTC, so "due on the 14th" stays the 14th wherever it is
- * read, and must be in the future.
+ * A paper's details as the form sends them. Topic and discipline arrive as a
+ * choice from a list, or OTHER plus the typed value; `resolvePaperDetails`
+ * turns that into what is stored.
  */
-const deadline = z
-  .string()
-  .trim()
-  .transform((value, ctx) => {
-    if (!value) return null;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      ctx.addIssue({ code: "custom", message: "Enter a valid date." });
-      return z.NEVER;
+export const paperDetailsSchema = z
+  .object({
+    title: text(5, 300, "Give the paper its title.", "Keep the title under 300 characters."),
+    authorNames: text(2, 1000, "List the authors.", "Keep the author list under 1,000 characters."),
+    contactEmail: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .pipe(z.email("Enter the main author’s email address.").max(254)),
+    institution: text(
+      2,
+      300,
+      "Enter the main author’s institution.",
+      "Keep this under 300 characters.",
+    ),
+    topic: z.string().trim().min(1, "Choose a topic.").max(300),
+    topicOther: z.string().trim().max(200, "Keep the topic under 200 characters."),
+    disciplineId: z.string().trim().min(1, "Choose the broad area of research."),
+    disciplineOther: z.string().trim().max(200, "Keep this under 200 characters."),
+    paperType: z.enum(PAPER_TYPES, "Choose the type of paper."),
+    abstract: text(
+      50,
+      ABSTRACT_MAX,
+      "Write an abstract of at least a few sentences.",
+      `Keep the abstract under ${ABSTRACT_MAX.toLocaleString("en")} characters.`,
+    ),
+  })
+  .superRefine((value, ctx) => {
+    if (value.topic === OTHER && !value.topicOther) {
+      ctx.addIssue({ code: "custom", path: ["topicOther"], message: "Type the topic." });
     }
-    const date = new Date(`${value}T23:59:59.000Z`);
-    if (Number.isNaN(date.getTime())) {
-      ctx.addIssue({ code: "custom", message: "Enter a valid date." });
-      return z.NEVER;
+    if (value.disciplineId === OTHER && !value.disciplineOther) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["disciplineOther"],
+        message: "Type the area of research.",
+      });
     }
-    if (date.getTime() <= Date.now()) {
-      ctx.addIssue({ code: "custom", message: "Choose a date in the future." });
-      return z.NEVER;
-    }
-    return date;
   });
 
-export const submissionDetailsSchema = z.object({
-  title: z
-    .string()
-    .trim()
-    .min(3, "Give your document a title.")
-    .max(200, "Keep the title under 200 characters."),
-  documentTypeId: z.uuid("Choose what kind of document this is."),
-  purpose: optionalText(500, "Keep this under 500 characters."),
-  description: optionalText(2000, "Keep this under 2,000 characters."),
-  instructions: optionalText(4000, "Keep this under 4,000 characters."),
-  focusAreas: optionalText(2000, "Keep this under 2,000 characters."),
-  deadline,
-});
+export type PaperDetailsInput = z.infer<typeof paperDetailsSchema>;
 
-export type SubmissionDetails = z.infer<typeof submissionDetailsSchema>;
+/** The stored form of a paper's details. */
+export type PaperDetails = {
+  title: string;
+  authorNames: string;
+  contactEmail: string;
+  institution: string;
+  topic: string;
+  disciplineId: string | null;
+  disciplineOther: string | null;
+  paperType: (typeof PAPER_TYPES)[number];
+  abstract: string;
+};
 
-/** Tomorrow as a date-input value: the earliest deadline a form may offer. */
-export function earliestDeadlineInput(): string {
-  return new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+export function resolvePaperDetails(input: PaperDetailsInput): PaperDetails {
+  return {
+    title: input.title,
+    authorNames: input.authorNames,
+    contactEmail: input.contactEmail,
+    institution: input.institution,
+    topic: input.topic === OTHER ? input.topicOther : input.topic,
+    disciplineId: input.disciplineId === OTHER ? null : input.disciplineId,
+    disciplineOther: input.disciplineId === OTHER ? input.disciplineOther : null,
+    paperType: input.paperType,
+    abstract: input.abstract,
+  };
 }
 
-/** The date-input value ("YYYY-MM-DD") for a stored deadline. */
-export function deadlineInputValue(deadline: Date | string | null): string {
-  if (!deadline) return "";
-  return new Date(deadline).toISOString().slice(0, 10);
+/** Word count, for the abstract field's hint. */
+export function countWords(value: string): number {
+  return value.trim() ? value.trim().split(/\s+/).length : 0;
 }

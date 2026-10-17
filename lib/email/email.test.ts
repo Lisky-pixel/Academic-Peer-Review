@@ -18,7 +18,7 @@ async function loadWithResend() {
   vi.resetModules();
   vi.stubEnv("EMAIL_PROVIDER", "resend");
   vi.stubEnv("RESEND_API_KEY", "re_test_key");
-  vi.stubEnv("EMAIL_FROM", "ReviewFlow <noreply@example.com>");
+  vi.stubEnv("EMAIL_FROM", "Academic Peer Review <noreply@example.com>");
   vi.stubEnv("EMAIL_REPLY_TO", "");
   return import("@/lib/email");
 }
@@ -45,7 +45,7 @@ describe("delivering via Resend", () => {
       "Content-Type": "application/json",
     });
     expect(JSON.parse(init.body as string)).toEqual({
-      from: "ReviewFlow <noreply@example.com>",
+      from: "Academic Peer Review <noreply@example.com>",
       to: ["author@example.com"],
       subject: "Reset your password",
       text: "Plain text body",

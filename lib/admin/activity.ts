@@ -10,10 +10,13 @@ export const ACTIVITY_PAGE_SIZE = 50;
 
 /** Groups of actions, by the prefix of their name. */
 export const ACTIVITY_CATEGORIES = {
-  submission: { label: "Submissions and reviews", prefix: "submission." },
+  submission: {
+    label: "Papers and reviews",
+    prefixes: ["submission.", "assignment.", "review."],
+  },
+  conference: { label: "Conferences", prefix: "conference." },
   auth: { label: "Sign-ins and accounts", prefix: "auth." },
   user: { label: "People", prefix: "user." },
-  setup: { label: "Document types and templates", prefixes: ["document_type.", "template."] },
 } as const;
 
 export type ActivityCategory = keyof typeof ACTIVITY_CATEGORIES;
@@ -65,8 +68,10 @@ const SELECT = {
 } satisfies Prisma.ActivityLogSelect;
 
 export type ActivityLogRecord = Prisma.ActivityLogGetPayload<{ select: typeof SELECT }> & {
-  /** What the entry is about, in words: a reference, a name, a type. */
+  /** What the entry is about, in words: a reference, a name, a conference. */
   subject: string | null;
+  /** Where to read more, when the subject has a page. */
+  href: string | null;
 };
 
 export async function findActivity(
@@ -88,25 +93,40 @@ export async function findActivity(
   const ids = (type: string) => [
     ...new Set(rows.filter((row) => row.entityType === type).map((row) => row.entityId)),
   ];
-  const [submissions, users, types] = await Promise.all([
+  const [submissions, users, conferences] = await Promise.all([
     db.submission.findMany({
       where: { id: { in: ids("Submission") } },
-      select: { id: true, reference: true },
+      select: { id: true, reference: true, conferenceId: true },
     }),
     db.user.findMany({ where: { id: { in: ids("User") } }, select: { id: true, name: true } }),
-    db.documentType.findMany({
-      where: { id: { in: ids("DocumentType") } },
+    db.conference.findMany({
+      where: { id: { in: ids("Conference") } },
       select: { id: true, name: true },
     }),
   ]);
-  const subject = new Map<string, string>([
-    ...submissions.map((row) => [row.id, row.reference] as const),
-    ...users.map((row) => [row.id, row.name] as const),
-    ...types.map((row) => [row.id, row.name] as const),
+  const subject = new Map<string, { text: string; href: string | null }>([
+    ...submissions.map(
+      (row) =>
+        [
+          row.id,
+          {
+            text: row.reference,
+            href: `/organiser/conferences/${row.conferenceId}/papers/${row.id}`,
+          },
+        ] as const,
+    ),
+    ...users.map((row) => [row.id, { text: row.name, href: null }] as const),
+    ...conferences.map(
+      (row) => [row.id, { text: row.name, href: `/admin/conferences/${row.id}` }] as const,
+    ),
   ]);
 
   return {
-    items: rows.map((row) => ({ ...row, subject: subject.get(row.entityId) ?? null })),
+    items: rows.map((row) => ({
+      ...row,
+      subject: subject.get(row.entityId)?.text ?? null,
+      href: subject.get(row.entityId)?.href ?? null,
+    })),
     total,
     page,
     pages: Math.max(1, Math.ceil(total / ACTIVITY_PAGE_SIZE)),

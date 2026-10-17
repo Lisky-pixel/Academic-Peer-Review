@@ -2,35 +2,43 @@ import { createHash, randomUUID } from "node:crypto";
 import type { SessionUser } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
+import { type ScrubFailure, scrubDocument } from "@/lib/files/scrub";
 import {
   checkDeclaredFile,
   checkFileContent,
-  type DocumentKind,
   extensionOf,
   type FileRejection,
 } from "@/lib/files/validate";
 import type { Prisma, SubmissionStatus } from "@/lib/generated/prisma/client";
 import { storage } from "@/lib/storage";
-import type { SubmissionDetails } from "@/lib/submissions/schema";
+import type { PaperDetails } from "@/lib/submissions/schema";
 import { transition, type TransitionFailure } from "@/lib/workflow/state-machine";
 
 /**
- * Submissions, from the author's side: drafting, attaching the document,
- * submitting, and withdrawing.
+ * Papers, from the submitter's side: drafting, attaching the file,
+ * submitting, editing until reviewers have it, withdrawing, and reading the
+ * reviews once a decision is made.
  *
- * Every function that takes an `authorId` or `author` scopes its queries to
- * that person, so "not found" and "not yours" are the same answer and ids
- * cannot be probed. Status never changes here except through `transition()`.
+ * Every function that takes an `authorId` scopes its queries to that person,
+ * so "not found" and "not yours" are the same answer and ids cannot be
+ * probed. Status never changes here except through `transition()`.
  */
+
+/** A paper can be edited until it goes to reviewers. */
+export const EDITABLE: SubmissionStatus[] = ["DRAFT", "SUBMITTED"];
+
+/** The submitter sees the reviews only once there is a decision. */
+export const DECIDED: SubmissionStatus[] = ["ACCEPTED", "REJECTED"];
+
+/** Paper files: PDF and Word only, the two whose metadata can be scrubbed. */
+export const PAPER_KINDS = ["pdf", "docx"] as const;
 
 // ── Reference numbers ──────────────────────────────────────────────────────
 
 /**
- * Allocates the next reference for the current year, e.g. "RF-2026-0147".
- *
+ * Allocates the next reference for the current year, e.g. "APR-2026-0147".
  * One atomic upsert on the per-year counter, so two people submitting at the
- * same instant get consecutive numbers rather than the same one. Numbers are
- * never reused, so a withdrawn draft leaves a gap; that is intended.
+ * same instant get consecutive numbers rather than the same one.
  */
 export async function allocateReference(
   tx: Prisma.TransactionClient,
@@ -46,141 +54,224 @@ export async function allocateReference(
 }
 
 export function formatReference(year: number, sequence: number): string {
-  return `RF-${year}-${String(sequence).padStart(4, "0")}`;
+  return `APR-${year}-${String(sequence).padStart(4, "0")}`;
+}
+
+// ── Conferences open for papers ────────────────────────────────────────────
+
+export function isOpenForPapers(
+  conference: { submissionsOpenAt: Date; submissionsCloseAt: Date },
+  now: Date = new Date(),
+): boolean {
+  return conference.submissionsOpenAt <= now && now < conference.submissionsCloseAt;
+}
+
+const OPEN_CONFERENCE_SELECT = {
+  id: true,
+  name: true,
+  description: true,
+  venue: true,
+  startsOn: true,
+  endsOn: true,
+  submissionsOpenAt: true,
+  submissionsCloseAt: true,
+  submissionFormat: true,
+  topics: true,
+  doubleBlind: true,
+} satisfies Prisma.ConferenceSelect;
+
+export type OpenConferenceRecord = Prisma.ConferenceGetPayload<{
+  select: typeof OPEN_CONFERENCE_SELECT;
+}>;
+
+export function findOpenConferences(now: Date = new Date()): Promise<OpenConferenceRecord[]> {
+  return db.conference.findMany({
+    where: { submissionsOpenAt: { lte: now }, submissionsCloseAt: { gt: now } },
+    orderBy: { submissionsCloseAt: "asc" },
+    select: OPEN_CONFERENCE_SELECT,
+  });
+}
+
+export function findConferenceForSubmitting(conferenceId: string) {
+  return db.conference.findUnique({
+    where: { id: conferenceId },
+    select: OPEN_CONFERENCE_SELECT,
+  });
+}
+
+export function findDisciplines() {
+  return db.discipline.findMany({
+    where: { isActive: true },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    select: { id: true, name: true },
+  });
 }
 
 // ── Reading ────────────────────────────────────────────────────────────────
 
-const OWN_SUBMISSION_SELECT = {
+const OWN_PAPER_SELECT = {
   id: true,
   reference: true,
   title: true,
-  purpose: true,
-  description: true,
-  instructions: true,
-  focusAreas: true,
-  deadline: true,
+  authorNames: true,
+  contactEmail: true,
+  institution: true,
+  topic: true,
+  disciplineId: true,
+  disciplineOther: true,
+  discipline: { select: { name: true } },
+  paperType: true,
+  abstract: true,
   status: true,
+  decisionNote: true,
+  decidedAt: true,
   createdAt: true,
   updatedAt: true,
   submittedAt: true,
-  documentType: { select: { id: true, name: true } },
+  conference: {
+    select: {
+      id: true,
+      name: true,
+      topics: true,
+      submissionFormat: true,
+      submissionsOpenAt: true,
+      submissionsCloseAt: true,
+      doubleBlind: true,
+    },
+  },
   files: {
     where: { kind: "ORIGINAL" },
     orderBy: { createdAt: "desc" },
     take: 1,
-    select: { id: true, originalFilename: true, sizeBytes: true, createdAt: true },
+    select: { originalFilename: true, sizeBytes: true, createdAt: true },
   },
 } satisfies Prisma.SubmissionSelect;
 
-export type OwnSubmissionRecord = Prisma.SubmissionGetPayload<{
-  select: typeof OWN_SUBMISSION_SELECT;
-}>;
+export type OwnPaperRecord = Prisma.SubmissionGetPayload<{ select: typeof OWN_PAPER_SELECT }>;
 
-export function findOwnSubmissions(authorId: string): Promise<OwnSubmissionRecord[]> {
+export function findOwnPapers(authorId: string): Promise<OwnPaperRecord[]> {
   return db.submission.findMany({
     where: { authorId },
     orderBy: { updatedAt: "desc" },
-    select: OWN_SUBMISSION_SELECT,
+    select: OWN_PAPER_SELECT,
   });
 }
 
-export function findOwnSubmission(
-  authorId: string,
-  submissionId: string,
-): Promise<OwnSubmissionRecord | null> {
+export function findOwnPaper(authorId: string, paperId: string): Promise<OwnPaperRecord | null> {
   return db.submission.findFirst({
-    where: { id: submissionId, authorId },
-    select: OWN_SUBMISSION_SELECT,
+    where: { id: paperId, authorId },
+    select: OWN_PAPER_SELECT,
   });
 }
 
-export function findDocumentTypes() {
-  return db.documentType.findMany({
-    where: { isActive: true },
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, description: true },
-  });
-}
-
-const ADMIN_SUBMISSION_SELECT = {
+const OWN_REVIEWS_SELECT = {
   id: true,
-  reference: true,
-  title: true,
-  status: true,
-  deadline: true,
-  createdAt: true,
+  score: true,
+  recommend: true,
+  comments: true,
   submittedAt: true,
-  documentType: { select: { id: true, name: true } },
-  author: { select: { id: true, name: true, email: true } },
-  assignments: {
-    where: { isActive: true },
-    select: { dueAt: true, reviewer: { select: { name: true } } },
+  files: {
+    where: { kind: "ANNOTATED", scrubbedAt: { not: null } },
+    orderBy: { createdAt: "desc" },
+    take: 1,
+    select: { id: true, originalFilename: true, sizeBytes: true },
   },
-} satisfies Prisma.SubmissionSelect;
+} satisfies Prisma.ReviewSelect;
 
-export type AdminSubmissionRecord = Prisma.SubmissionGetPayload<{
-  select: typeof ADMIN_SUBMISSION_SELECT;
-}>;
+export type OwnReviewRecord = Prisma.ReviewGetPayload<{ select: typeof OWN_REVIEWS_SELECT }>;
 
-export type AdminSubmissionFilter = {
-  documentTypeId?: string;
-  /** "week": due within seven days. "overdue": already past its deadline. */
-  due?: "week" | "overdue";
-};
-
-/** Everything authors have submitted. Drafts are private until submitted. */
-export function findSubmissionsForAdmin(
-  statuses?: SubmissionStatus[],
-  filter: AdminSubmissionFilter = {},
-  now: Date = new Date(),
-): Promise<AdminSubmissionRecord[]> {
-  const inAWeek = new Date(now.getTime() + 7 * 86_400_000);
-  return db.submission.findMany({
+/**
+ * The finished reviews of a paper, for its submitter, once it has been
+ * decided. Nothing about who wrote them is selected.
+ */
+export function findOwnReviews(authorId: string, paperId: string): Promise<OwnReviewRecord[]> {
+  return db.review.findMany({
     where: {
-      status: statuses ? { in: statuses } : { not: "DRAFT" },
-      documentTypeId: filter.documentTypeId,
-      deadline:
-        filter.due === "overdue"
-          ? { lt: now }
-          : filter.due === "week"
-            ? { gte: now, lte: inAWeek }
-            : undefined,
+      status: "SUBMITTED",
+      submission: { id: paperId, authorId, status: { in: DECIDED } },
     },
-    orderBy: [{ submittedAt: "asc" }, { createdAt: "asc" }],
-    select: ADMIN_SUBMISSION_SELECT,
+    orderBy: { submittedAt: "asc" },
+    select: OWN_REVIEWS_SELECT,
   });
 }
 
-// ── Drafting ───────────────────────────────────────────────────────────────
-
-async function defaultAuthorVisibility(): Promise<boolean> {
-  const setting = await db.appSetting.findUnique({ where: { key: "defaultAuthorVisibility" } });
-  return typeof setting?.value === "boolean" ? setting.value : true;
+/** A download link for a reviewer's marked-up copy, for the paper's submitter. */
+export async function ownReviewFileUrl(
+  authorId: string,
+  paperId: string,
+  fileId: string,
+): Promise<string | null> {
+  const file = await db.storedFile.findFirst({
+    where: {
+      id: fileId,
+      kind: "ANNOTATED",
+      // Never a file whose metadata was not stripped.
+      scrubbedAt: { not: null },
+      review: { status: "SUBMITTED" },
+      submission: { id: paperId, authorId, status: { in: DECIDED } },
+    },
+    select: { storageKey: true, originalFilename: true },
+  });
+  if (!file) return null;
+  return storage().presignDownload({ key: file.storageKey, filename: file.originalFilename });
 }
 
-export type DraftResult = { ok: true; id: string } | { ok: false; reason: "unknown_document_type" };
+/** A short-lived link to download the submitter's own paper, or null. */
+export async function ownPaperDownloadUrl(
+  authorId: string,
+  paperId: string,
+): Promise<string | null> {
+  const file = await db.storedFile.findFirst({
+    where: { kind: "ORIGINAL", submission: { id: paperId, authorId } },
+    orderBy: { createdAt: "desc" },
+    select: { storageKey: true, originalFilename: true },
+  });
+  if (!file) return null;
+  return storage().presignDownload({ key: file.storageKey, filename: file.originalFilename });
+}
 
-async function documentTypeExists(id: string): Promise<boolean> {
-  return (await db.documentType.count({ where: { id, isActive: true } })) === 1;
+// ── Drafting and editing ───────────────────────────────────────────────────
+
+export type DetailsFailure = "conference_closed" | "unknown_discipline" | "unknown_topic";
+
+async function checkDetails(
+  conference: { topics: string[] },
+  details: PaperDetails,
+  typedTopic: boolean,
+): Promise<DetailsFailure | null> {
+  if (!typedTopic && !conference.topics.includes(details.topic)) return "unknown_topic";
+  if (details.disciplineId) {
+    const found = await db.discipline.count({
+      where: { id: details.disciplineId, isActive: true },
+    });
+    if (found !== 1) return "unknown_discipline";
+  }
+  return null;
 }
 
 export async function createDraft(
   author: SessionUser,
-  details: SubmissionDetails,
-): Promise<DraftResult> {
-  if (!(await documentTypeExists(details.documentTypeId))) {
-    return { ok: false, reason: "unknown_document_type" };
+  conferenceId: string,
+  details: PaperDetails,
+  typedTopic: boolean,
+): Promise<{ ok: true; id: string } | { ok: false; reason: DetailsFailure }> {
+  const conference = await db.conference.findUnique({
+    where: { id: conferenceId },
+    select: { topics: true, submissionsOpenAt: true, submissionsCloseAt: true },
+  });
+  if (!conference || !isOpenForPapers(conference)) {
+    return { ok: false, reason: "conference_closed" };
   }
-  const authorVisibleToReviewer = await defaultAuthorVisibility();
+  const problem = await checkDetails(conference, details, typedTopic);
+  if (problem) return { ok: false, reason: problem };
 
-  const submission = await db.$transaction(async (tx) => {
+  const paper = await db.$transaction(async (tx) => {
     const created = await tx.submission.create({
       data: {
         ...details,
+        conferenceId,
         reference: await allocateReference(tx),
         authorId: author.id,
-        authorVisibleToReviewer,
       },
       select: { id: true },
     });
@@ -196,39 +287,54 @@ export async function createDraft(
     return created;
   });
 
-  return { ok: true, id: submission.id };
+  return { ok: true, id: paper.id };
 }
 
-export type UpdateDraftResult =
-  { ok: true } | { ok: false; reason: "unknown_document_type" | "not_editable" };
+export type UpdateResult = { ok: true } | { ok: false; reason: DetailsFailure | "not_editable" };
 
-/** Details can change only while the submission is still a draft. */
-export async function updateDraft(
-  authorId: string,
-  submissionId: string,
-  details: SubmissionDetails,
-): Promise<UpdateDraftResult> {
-  if (!(await documentTypeExists(details.documentTypeId))) {
-    return { ok: false, reason: "unknown_document_type" };
-  }
+/** Details can change until the paper goes to reviewers. */
+export async function updatePaper(
+  author: SessionUser,
+  paperId: string,
+  details: PaperDetails,
+  typedTopic: boolean,
+): Promise<UpdateResult> {
+  const paper = await db.submission.findFirst({
+    where: { id: paperId, authorId: author.id, status: { in: EDITABLE } },
+    select: { conference: { select: { topics: true } } },
+  });
+  if (!paper) return { ok: false, reason: "not_editable" };
+  const problem = await checkDetails(paper.conference, details, typedTopic);
+  if (problem) return { ok: false, reason: problem };
+
   const { count } = await db.submission.updateMany({
-    where: { id: submissionId, authorId, status: "DRAFT" },
+    where: { id: paperId, authorId: author.id, status: { in: EDITABLE } },
     data: details,
   });
-  return count === 1 ? { ok: true } : { ok: false, reason: "not_editable" };
+  if (count !== 1) return { ok: false, reason: "not_editable" };
+
+  await db.activityLog.create({
+    data: {
+      action: "submission.edited",
+      entityType: "Submission",
+      entityId: paperId,
+      actorId: author.id,
+      actorRole: author.role,
+    },
+  });
+  return { ok: true };
 }
 
-// ── The document ───────────────────────────────────────────────────────────
+// ── The paper file ─────────────────────────────────────────────────────────
 
-function findOwnDraft(authorId: string, submissionId: string) {
+function findOwnEditable(authorId: string, paperId: string) {
   return db.submission.findFirst({
-    where: { id: submissionId, authorId, status: "DRAFT" },
+    where: { id: paperId, authorId, status: { in: EDITABLE } },
     select: { id: true },
   });
 }
 
-const KEY_PATTERN =
-  /^submissions\/([0-9a-f-]{36})\/original\/[0-9a-f-]{36}\.(pdf|docx|doc|txt|rtf)$/;
+const KEY_PATTERN = /^submissions\/([0-9a-f-]{36})\/raw\/[0-9a-f-]{36}\.(pdf|docx)$/;
 
 export type PrepareUploadResult =
   | { ok: true; url: string; key: string; mimeType: string }
@@ -240,17 +346,18 @@ export type PrepareUploadResult =
  */
 export async function prepareUpload(
   authorId: string,
-  submissionId: string,
+  paperId: string,
   file: { filename: string; mimeType: string; sizeBytes: number },
 ): Promise<PrepareUploadResult> {
-  if (!(await findOwnDraft(authorId, submissionId))) return { ok: false, reason: "not_editable" };
+  if (!(await findOwnEditable(authorId, paperId))) return { ok: false, reason: "not_editable" };
 
   const check = checkDeclaredFile(file, env.MAX_UPLOAD_BYTES);
   if (!check.ok) return check;
+  if (!(PAPER_KINDS as readonly string[]).includes(check.kind)) {
+    return { ok: false, reason: "unsupported_type" };
+  }
 
-  // The key is ours, never the uploader's filename: a name is attacker-chosen
-  // text, and it is also personal data that does not belong in a URL.
-  const key = `submissions/${submissionId}/original/${randomUUID()}.${extensionOf(file.filename)}`;
+  const key = `submissions/${paperId}/raw/${randomUUID()}.${extensionOf(file.filename)}`;
   const url = await storage().presignUpload({
     key,
     contentType: check.mimeType,
@@ -260,120 +367,149 @@ export async function prepareUpload(
 }
 
 export type ConfirmUploadResult =
-  { ok: true } | { ok: false; reason: FileRejection | "not_editable" | "not_uploaded" };
+  | { ok: true }
+  | { ok: false; reason: FileRejection | ScrubFailure | "not_editable" | "not_uploaded" };
 
 /**
- * Step two: the browser says the upload finished. Nothing it says is taken
- * on trust — the object is fetched and its real size and leading bytes are
- * checked before it is recorded. A file that fails is deleted.
+ * Step two: the browser says the upload finished. The object is fetched and
+ * its real size and leading bytes are checked; then the names in its
+ * metadata (document author, last editor, tracked-change authors) are
+ * replaced with "Author" and only that scrubbed copy is kept. The raw upload
+ * is deleted whatever happens.
  *
- * A draft has one document; attaching another replaces it.
+ * A paper has one file; attaching another replaces it.
  */
 export async function confirmUpload(
   author: SessionUser,
-  submissionId: string,
-  key: string,
+  paperId: string,
+  rawKey: string,
   originalFilename: string,
 ): Promise<ConfirmUploadResult> {
-  if (!(await findOwnDraft(author.id, submissionId))) return { ok: false, reason: "not_editable" };
+  const match = KEY_PATTERN.exec(rawKey);
+  if (!match || match[1] !== paperId) return { ok: false, reason: "not_uploaded" };
+  const kind = match[2] as (typeof PAPER_KINDS)[number];
 
-  // The key must be one this submission could have been issued, or a caller
-  // could attach somebody else's object to their own draft.
-  const match = KEY_PATTERN.exec(key);
-  if (!match || match[1] !== submissionId) return { ok: false, reason: "not_uploaded" };
-  const kind = match[2] as DocumentKind;
+  try {
+    if (!(await findOwnEditable(author.id, paperId))) return { ok: false, reason: "not_editable" };
 
-  const info = await storage().head(key);
-  if (!info) return { ok: false, reason: "not_uploaded" };
-  if (info.sizeBytes > env.MAX_UPLOAD_BYTES) {
-    await storage().delete(key);
-    return { ok: false, reason: "too_large" };
-  }
+    const info = await storage().head(rawKey);
+    if (!info) return { ok: false, reason: "not_uploaded" };
+    if (info.sizeBytes > env.MAX_UPLOAD_BYTES) return { ok: false, reason: "too_large" };
 
-  const bytes = await storage().read(key);
-  const content = checkFileContent(kind, bytes, env.MAX_UPLOAD_BYTES);
-  if (!content.ok) {
-    await storage().delete(key);
-    return content;
-  }
+    const raw = await storage().read(rawKey);
+    const content = checkFileContent(kind, raw, env.MAX_UPLOAD_BYTES);
+    if (!content.ok) return content;
 
-  const declared = checkDeclaredFile(
-    { filename: `file.${kind}`, mimeType: info.contentType ?? "", sizeBytes: bytes.length },
-    env.MAX_UPLOAD_BYTES,
-  );
-  const mimeType = declared.ok ? declared.mimeType : "application/octet-stream";
+    const scrubbed = await scrubDocument(kind, raw, "Author");
+    if (!scrubbed.ok) return scrubbed;
 
-  const replaced = await db.$transaction(async (tx) => {
-    const previous = await tx.storedFile.findMany({
-      where: { submissionId, kind: "ORIGINAL" },
-      select: { id: true, storageKey: true },
+    const declared = checkDeclaredFile(
+      { filename: `file.${kind}`, mimeType: info.contentType ?? "", sizeBytes: raw.length },
+      env.MAX_UPLOAD_BYTES,
+    );
+    const mimeType = declared.ok ? declared.mimeType : "application/octet-stream";
+    const key = `submissions/${paperId}/paper/${randomUUID()}.${kind}`;
+    await storage().write(key, scrubbed.bytes, mimeType);
+
+    const replaced = await db.$transaction(async (tx) => {
+      const previous = await tx.storedFile.findMany({
+        where: { submissionId: paperId, kind: "ORIGINAL" },
+        select: { id: true, storageKey: true },
+      });
+      await tx.storedFile.deleteMany({ where: { id: { in: previous.map((file) => file.id) } } });
+      await tx.storedFile.create({
+        data: {
+          submissionId: paperId,
+          kind: "ORIGINAL",
+          storageKey: key,
+          originalFilename: originalFilename.slice(0, 255),
+          mimeType,
+          sizeBytes: scrubbed.bytes.length,
+          checksum: createHash("sha256").update(scrubbed.bytes).digest("hex"),
+          uploadedById: author.id,
+          scrubbedAt: new Date(),
+        },
+      });
+      await tx.submission.update({ where: { id: paperId }, data: { updatedAt: new Date() } });
+      return previous;
     });
-    await tx.storedFile.deleteMany({ where: { id: { in: previous.map((file) => file.id) } } });
-    await tx.storedFile.create({
-      data: {
-        submissionId,
-        kind: "ORIGINAL",
-        storageKey: key,
-        originalFilename: originalFilename.slice(0, 255),
-        mimeType,
-        sizeBytes: bytes.length,
-        checksum: createHash("sha256").update(bytes).digest("hex"),
-        uploadedById: author.id,
-      },
-    });
-    // Touch the draft so it sorts as recently worked on.
-    await tx.submission.update({ where: { id: submissionId }, data: { updatedAt: new Date() } });
-    return previous;
-  });
+    await Promise.allSettled(replaced.map((file) => storage().delete(file.storageKey)));
 
-  // After the transaction: if this fails the row is already gone and the
-  // object is merely orphaned, which is harmless and cleaned up later.
-  await Promise.allSettled(replaced.map((file) => storage().delete(file.storageKey)));
-
-  return { ok: true };
-}
-
-/** A short-lived link to download the author's own document, or null. */
-export async function ownDocumentDownloadUrl(
-  authorId: string,
-  submissionId: string,
-): Promise<string | null> {
-  const file = await db.storedFile.findFirst({
-    where: { kind: "ORIGINAL", submission: { id: submissionId, authorId } },
-    orderBy: { createdAt: "desc" },
-    select: { storageKey: true, originalFilename: true },
-  });
-  if (!file) return null;
-  return storage().presignDownload({ key: file.storageKey, filename: file.originalFilename });
+    return { ok: true };
+  } finally {
+    await storage()
+      .delete(rawKey)
+      .catch(() => undefined);
+  }
 }
 
 // ── Submitting and withdrawing ─────────────────────────────────────────────
 
-export type SubmitResult = { ok: true } | { ok: false; reason: TransitionFailure | "no_document" };
+export type SubmitFailure =
+  TransitionFailure | "no_file" | "no_declaration" | "conference_closed" | "limit_reached";
 
-export async function submitDraft(
+export async function submitPaper(
   author: SessionUser,
-  submissionId: string,
+  paperId: string,
+  declared: boolean,
   ip?: string | null,
-): Promise<SubmitResult> {
-  const hasDocument = await db.storedFile.count({
-    where: { kind: "ORIGINAL", submission: { id: submissionId, authorId: author.id } },
+): Promise<{ ok: true } | { ok: false; reason: SubmitFailure }> {
+  const paper = await db.submission.findFirst({
+    where: { id: paperId, authorId: author.id },
+    select: {
+      conferenceId: true,
+      conference: {
+        select: {
+          submissionFormat: true,
+          submissionLimit: true,
+          submissionsOpenAt: true,
+          submissionsCloseAt: true,
+        },
+      },
+      _count: { select: { files: { where: { kind: "ORIGINAL" } } } },
+    },
   });
-  if (hasDocument === 0) {
-    const exists = await db.submission.count({ where: { id: submissionId, authorId: author.id } });
-    return { ok: false, reason: exists ? "no_document" : "not_found" };
+  if (!paper) return { ok: false, reason: "not_found" };
+  if (!isOpenForPapers(paper.conference)) return { ok: false, reason: "conference_closed" };
+  if (paper.conference.submissionFormat === "FULL_PAPER" && paper._count.files === 0) {
+    return { ok: false, reason: "no_file" };
+  }
+  if (!declared) return { ok: false, reason: "no_declaration" };
+
+  const limit = paper.conference.submissionLimit;
+  if (limit !== null) {
+    const used = await db.submission.count({
+      where: {
+        conferenceId: paper.conferenceId,
+        status: { notIn: ["DRAFT", "WITHDRAWN"] },
+      },
+    });
+    if (used >= limit) return { ok: false, reason: "limit_reached" };
   }
 
-  const result = await transition({ submissionId, event: "submit", actor: author, ip });
+  const result = await transition({
+    submissionId: paperId,
+    event: "submit",
+    actor: author,
+    ip,
+    apply: async (tx) => {
+      await tx.submission.update({
+        where: { id: paperId },
+        data: { declarationAt: new Date() },
+      });
+    },
+  });
   return result.ok ? { ok: true } : result;
 }
 
-/** Withdraws a draft, or a submission nobody has been asked to read yet. */
-export async function withdrawSubmission(
+/** Withdraws a draft, or a paper reviewers do not have yet. */
+export async function withdrawPaper(
   author: SessionUser,
-  submissionId: string,
+  paperId: string,
   ip?: string | null,
 ): Promise<{ ok: true } | { ok: false; reason: TransitionFailure }> {
-  const result = await transition({ submissionId, event: "cancel", actor: author, ip });
+  const owns = await db.submission.count({ where: { id: paperId, authorId: author.id } });
+  if (owns !== 1) return { ok: false, reason: "not_found" };
+  const result = await transition({ submissionId: paperId, event: "withdraw", actor: author, ip });
   return result.ok ? { ok: true } : result;
 }

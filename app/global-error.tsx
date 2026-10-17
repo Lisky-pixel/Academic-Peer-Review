@@ -23,7 +23,7 @@ export default function GlobalError({ reset }: { error: Error; reset: () => void
       >
         <main style={{ maxWidth: 420 }}>
           <h1 style={{ fontSize: 26, fontWeight: 600, margin: "0 0 12px" }}>
-            ReviewFlow is having trouble
+            Academic Peer Review is having trouble
           </h1>
           <p style={{ lineHeight: 1.6, margin: "0 0 24px", color: "#596376" }}>
             The page could not be shown. Your saved work is not affected. Please try again in a

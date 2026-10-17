@@ -1,4 +1,12 @@
-import { ChevronRight, CircleCheck, FilePen, Hourglass, Plus, Sparkles } from "lucide-react";
+import {
+  CalendarClock,
+  ChevronRight,
+  CircleCheck,
+  FilePen,
+  Hourglass,
+  MapPin,
+  Send,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { RoleArea } from "@/components/role-area";
@@ -6,104 +14,132 @@ import { StatTiles } from "@/components/stat-tiles";
 import { StatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
 import { requireRole } from "@/lib/auth/guards";
-import { toUserSubmissionDTO } from "@/lib/dto/submission";
+import { toUserPaperDTO } from "@/lib/dto/submission";
 import { formatDate } from "@/lib/format";
-import { findOwnSubmissions } from "@/lib/submissions";
+import { findOpenConferences, findOwnPapers } from "@/lib/submissions";
 import { STAGE_LABEL, STAGE_TONE } from "@/lib/submissions/stage";
 
-export const metadata: Metadata = { title: "Your submissions" };
+export const metadata: Metadata = { title: "My papers" };
 
-function NewSubmissionButton() {
-  return (
-    <Button asChild size="lg" className="h-10 px-4 text-sm">
-      <Link href="/dashboard/submissions/new">
-        <Plus aria-hidden />
-        New submission
-      </Link>
-    </Button>
-  );
-}
-
-export default async function UserDashboardPage() {
-  const user = await requireRole("USER");
-  const submissions = (await findOwnSubmissions(user.id)).map(toUserSubmissionDTO);
+export default async function MyPapersPage() {
+  const user = await requireRole("USER", "REVIEWER");
+  const [records, conferences] = await Promise.all([findOwnPapers(user.id), findOpenConferences()]);
+  const papers = records.map((record) => toUserPaperDTO(record));
 
   return (
     <RoleArea
       user={user}
-      title="Your submissions"
-      description="Every document you have sent for review, and where each one stands."
+      title="My papers"
+      description="Submit to a conference and follow each paper through review."
       current="/dashboard"
-      actions={submissions.length > 0 ? <NewSubmissionButton /> : undefined}
     >
-      {submissions.length > 0 && (
+      {papers.length > 0 && (
         <StatTiles
           stats={[
             {
-              label: "In progress",
-              icon: Hourglass,
-              value: submissions.filter((s) =>
-                ["awaiting_reviewer", "with_reviewer", "in_review", "final_checks"].includes(
-                  s.stage,
-                ),
-              ).length,
-            },
-            {
-              label: "Ready to read",
-              icon: Sparkles,
-              value: submissions.filter((s) => s.stage === "ready").length,
-            },
-            {
-              label: "Completed",
-              icon: CircleCheck,
-              value: submissions.filter((s) => s.stage === "completed").length,
-            },
-            {
               label: "Drafts",
               icon: FilePen,
-              value: submissions.filter((s) => s.stage === "draft").length,
+              value: papers.filter((paper) => paper.stage === "draft").length,
+            },
+            {
+              label: "Under review",
+              icon: Hourglass,
+              value: papers.filter((paper) => ["submitted", "under_review"].includes(paper.stage))
+                .length,
+            },
+            {
+              label: "Decided",
+              icon: CircleCheck,
+              value: papers.filter((paper) => ["accepted", "rejected"].includes(paper.stage))
+                .length,
             },
           ]}
         />
       )}
 
-      {submissions.length === 0 ? (
-        <div className="border-border rounded-2xl border border-dashed px-6 py-16 text-center">
-          <p className="font-heading text-2xl font-medium">Nothing here yet</p>
-          <p className="text-muted-foreground mx-auto mt-2 mb-7 max-w-md text-sm leading-relaxed text-pretty">
-            Send in a document and a reviewer will read it against clear criteria and return
-            feedback with a marked-up copy.
+      <section aria-labelledby="open-calls" className="space-y-4">
+        <h2 id="open-calls" className="font-heading text-2xl font-medium">
+          Open calls for papers
+        </h2>
+        {conferences.length === 0 ? (
+          <p className="glass text-muted-foreground rounded-2xl p-6 leading-relaxed">
+            No conference is taking papers right now. Calls appear here as soon as they open.
           </p>
-          <NewSubmissionButton />
-        </div>
-      ) : (
-        <ul className="glass divide-border divide-y overflow-hidden rounded-2xl">
-          {submissions.map((submission) => (
-            <li key={submission.id}>
-              <Link
-                href={`/dashboard/submissions/${submission.id}`}
-                className="hover:bg-muted/60 focus-visible:bg-muted/60 flex items-center gap-4 px-5 py-4 transition-colors outline-none sm:px-6"
+        ) : (
+          <ul className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2">
+            {conferences.map((conference) => (
+              <li
+                key={conference.id}
+                data-glow
+                className="glass flex flex-col justify-between gap-5 rounded-2xl p-5 sm:p-6"
               >
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <p className="truncate font-medium">{submission.title}</p>
-                  <p className="text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5 text-sm">
-                    <span className="tabular-nums">{submission.reference}</span>
-                    <span>{submission.documentType.name}</span>
-                    {submission.deadline && <span>Due {formatDate(submission.deadline)}</span>}
+                <div className="space-y-2">
+                  <h3 className="font-heading text-lg leading-snug font-medium">
+                    {conference.name}
+                  </h3>
+                  <p className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                    <span className="inline-flex items-center gap-1.5">
+                      <CalendarClock aria-hidden className="size-4" />
+                      Closes {formatDate(conference.submissionsCloseAt)}
+                    </span>
+                    {conference.venue && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <MapPin aria-hidden className="size-4" />
+                        {conference.venue}
+                      </span>
+                    )}
                   </p>
+                  {conference.description && (
+                    <p className="text-muted-foreground line-clamp-3 text-sm leading-relaxed">
+                      {conference.description}
+                    </p>
+                  )}
                 </div>
-                <StatusPill tone={STAGE_TONE[submission.stage]}>
-                  {STAGE_LABEL[submission.stage]}
-                </StatusPill>
-                <ChevronRight
-                  aria-hidden
-                  className="text-muted-foreground hidden size-4 sm:block"
-                />
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+                <div>
+                  <Button asChild size="lg" className="h-10 px-4 text-sm">
+                    <Link href={`/dashboard/papers/new?conference=${conference.id}`}>
+                      <Send aria-hidden />
+                      Submit a paper
+                    </Link>
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section aria-labelledby="my-papers" className="space-y-4">
+        <h2 id="my-papers" className="font-heading text-2xl font-medium">
+          Your papers
+        </h2>
+        {papers.length === 0 ? (
+          <p className="glass text-muted-foreground rounded-2xl p-6 leading-relaxed">
+            You have not submitted a paper yet. Choose an open call above to start.
+          </p>
+        ) : (
+          <ul className="glass divide-border divide-y overflow-hidden rounded-2xl">
+            {papers.map((paper) => (
+              <li key={paper.id}>
+                <Link
+                  href={`/dashboard/papers/${paper.id}`}
+                  className="hover:bg-muted/60 focus-visible:bg-muted/60 flex items-center gap-4 px-5 py-4 transition-colors outline-none sm:px-6"
+                >
+                  <span className="min-w-0 flex-1 space-y-1">
+                    <span className="block truncate font-medium">{paper.title}</span>
+                    <span className="text-muted-foreground flex flex-wrap gap-x-3 text-sm">
+                      <span className="font-mono text-xs leading-5">{paper.reference}</span>
+                      <span className="truncate">{paper.conference.name}</span>
+                    </span>
+                  </span>
+                  <StatusPill tone={STAGE_TONE[paper.stage]}>{STAGE_LABEL[paper.stage]}</StatusPill>
+                  <ChevronRight aria-hidden className="text-muted-foreground size-4 shrink-0" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </RoleArea>
   );
 }

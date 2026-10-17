@@ -3,9 +3,12 @@ import { cn } from "@/lib/utils";
 
 const TONE: Record<Tone, string> = {
   neutral: "bg-secondary text-secondary-foreground",
-  progress: "bg-mark/10 text-mark",
-  success: "bg-success/10 text-success",
+  // Solid tints, mixed with the card colour, so the text keeps its contrast
+  // whatever the pill sits on, including the blue backdrop.
+  progress: "bg-[color-mix(in_srgb,var(--mark)_10%,var(--card))] text-mark",
+  success: "bg-[color-mix(in_srgb,var(--success)_10%,var(--card))] text-success",
   muted: "bg-muted text-muted-foreground",
+  warning: "bg-[color-mix(in_srgb,var(--warning)_12%,var(--card))] text-warning",
 };
 
 /** A small coloured label for where something stands. */

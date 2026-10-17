@@ -153,6 +153,9 @@ export async function dispatchQueuedEmails(
  */
 export function kickEmailDispatch(): void {
   if (env.NODE_ENV === "test") return;
+  // Scripts that create a lot of activity (the seed) send the queue once at
+  // the end instead of starting a dispatch after every change.
+  if (process.env.APR_DEFER_EMAIL === "1") return;
 
   const run = () =>
     dispatchQueuedEmails().catch((error) => {

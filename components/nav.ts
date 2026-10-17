@@ -3,15 +3,26 @@ import type { Role } from "@/lib/generated/prisma/client";
 export type NavItem = { href: string; label: string; current?: boolean };
 
 const NAV = {
-  USER: [{ href: "/dashboard", label: "Submissions" }],
-  REVIEWER: [{ href: "/reviewer", label: "Queue" }],
+  USER: [
+    { href: "/dashboard", label: "My papers" },
+    { href: "/help", label: "Help" },
+  ],
+  // Reviewers can submit papers of their own as well.
+  REVIEWER: [
+    { href: "/reviewer", label: "Reviews" },
+    { href: "/dashboard", label: "My papers" },
+    { href: "/help", label: "Help" },
+  ],
+  ORGANISER: [
+    { href: "/organiser", label: "Conferences" },
+    { href: "/organiser/reviewers", label: "Reviewers" },
+    { href: "/help", label: "Help" },
+  ],
   ADMIN: [
-    { href: "/admin", label: "Submissions" },
+    { href: "/admin", label: "Conferences" },
     { href: "/admin/users", label: "People" },
     { href: "/admin/invites", label: "Invitations" },
-    { href: "/admin/document-types", label: "Document types" },
     { href: "/admin/activity", label: "Activity" },
-    { href: "/admin/reports", label: "Reports" },
   ],
 } as const satisfies Record<Role, readonly NavItem[]>;
 

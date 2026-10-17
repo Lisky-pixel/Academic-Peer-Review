@@ -13,8 +13,9 @@ import { getOwnAvatarUrl } from "@/lib/profile";
 import { cn } from "@/lib/utils";
 
 const ROLE_LABEL = {
-  USER: "Author",
+  USER: "Submitter",
   REVIEWER: "Reviewer",
+  ORGANISER: "Organiser",
   ADMIN: "Administrator",
 } as const;
 

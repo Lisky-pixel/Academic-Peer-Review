@@ -1,13 +1,14 @@
 import {
   ArrowRight,
-  Download,
+  BarChart3,
   EyeOff,
   FileUp,
-  ListChecks,
+  Gavel,
+  Mic,
   PenLine,
-  Route,
-  ShieldCheck,
+  Shuffle,
   UserSearch,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { Backdrop } from "@/components/backdrop";
@@ -19,62 +20,84 @@ import { Button } from "@/components/ui/button";
 const STEPS = [
   {
     icon: FileUp,
-    title: "Submit a document",
-    detail: "Upload it, say what it is for, and tell the reviewer where to focus.",
+    title: "Authors submit",
+    detail: "Title, abstract, discipline and the full paper, without the authors’ names.",
   },
   {
-    icon: UserSearch,
-    title: "We match a reviewer",
-    detail: "Someone suited to that kind of document is assigned to read it.",
+    icon: Shuffle,
+    title: "Reviewers are matched",
+    detail: "By discipline, never from the author’s institution, with workloads kept even.",
   },
   {
     icon: PenLine,
-    title: "They review it in full",
-    detail: "Scored against criteria for that document type, with an annotated copy.",
+    title: "They review it",
+    detail: "A score from 1 to 5, a recommendation, comments and a marked-up copy.",
   },
   {
-    icon: ShieldCheck,
-    title: "We check the review",
-    detail: "Every review is read and approved before it reaches you.",
+    icon: Gavel,
+    title: "Organisers decide",
+    detail: "Scores side by side. If reviewers disagree, another is added first.",
   },
   {
-    icon: Download,
-    title: "Read it and download",
-    detail: "The feedback and the marked-up file, with the reviewer kept anonymous.",
+    icon: Mic,
+    title: "Authors hear back",
+    detail: "The decision and every review, by email, with reviewers kept anonymous.",
   },
 ];
 
 const PROMISES = [
   {
     icon: EyeOff,
-    title: "Anonymous reviewers",
-    detail: "You never learn who read your work, so they can say what they think.",
+    title: "Blind review",
+    detail: "Double-blind by default: authors and reviewers never learn who the other is.",
   },
   {
-    icon: ListChecks,
-    title: "Clear criteria",
-    detail: "A score and a comment on each thing that matters for your kind of document.",
+    icon: UserSearch,
+    title: "Matched by discipline",
+    detail: "Papers go to reviewers who know the field, with conflicts of interest kept out.",
   },
   {
-    icon: Route,
-    title: "Tracked end to end",
-    detail: "A reference number and a status you can check whenever you like.",
+    icon: BarChart3,
+    title: "Everything in one place",
+    detail: "Progress, reminders, reports and an Excel export for every conference.",
   },
 ];
 
-// Mirrors the document types seeded in prisma/seed.ts.
-const DOCUMENT_TYPES = [
-  "Personal statements",
-  "Statements of purpose",
-  "Essays",
-  "Journals",
-  "Articles",
-  "Academic papers",
-  "Cover letters",
-  "CVs and résumés",
-  "Scholarship applications",
-  "Research proposals",
-  "General writing",
+const AUDIENCES = [
+  {
+    icon: Users,
+    title: "Conference organisers",
+    detail:
+      "Open a call for papers, follow every review, and decide with the scores in front of you.",
+    cta: { label: "Talk to us", href: "/help#contact" },
+  },
+  {
+    icon: FileUp,
+    title: "Authors",
+    detail: "Submit to open calls, edit until review starts, and read every review afterwards.",
+    cta: { label: "Submit a paper", href: "/register?as=submitter" },
+  },
+  {
+    icon: PenLine,
+    title: "Reviewers",
+    detail: "Review papers in your discipline, on your phone or laptop, anonymously.",
+    cta: { label: "Become a reviewer", href: "/register?as=reviewer" },
+  },
+];
+
+const DISCIPLINES = [
+  "Public Health",
+  "Economics",
+  "Education",
+  "Engineering",
+  "Agriculture and Food Science",
+  "Computer Science",
+  "Law",
+  "Environmental Science",
+  "Business and Management",
+  "Nursing and Midwifery",
+  "Tourism, Hospitality and Events",
+  "and more",
 ];
 
 const DEV_SERVICES = [
@@ -111,16 +134,16 @@ export default function HomePage() {
         >
           <div>
             <h1 className="font-heading text-[2.6rem] leading-[1.05] font-medium tracking-tight text-balance sm:text-6xl">
-              Have your writing read properly before it counts.
+              Peer review for academic conferences.
             </h1>
             <p className="text-muted-foreground mt-6 max-w-xl text-lg leading-relaxed text-pretty">
-              Send in a personal statement, an essay or a CV. A reviewer reads it against clear
-              criteria and returns honest feedback with a marked-up copy.
+              Take in papers, match them to the right reviewers, and decide with confidence, all in
+              one place built for conferences across Africa and beyond.
             </p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
               <Button asChild size="lg" className="group h-11 px-5 text-sm">
-                <Link href="/register">
-                  Submit your first document
+                <Link href="/register?as=submitter">
+                  Submit a paper
                   <ArrowRight
                     aria-hidden
                     className="transition-transform group-hover:translate-x-0.5"
@@ -128,9 +151,18 @@ export default function HomePage() {
                 </Link>
               </Button>
               <Button asChild size="lg" variant="outline" className="h-11 px-5 text-sm">
-                <Link href="/login">Sign in</Link>
+                <Link href="/register?as=reviewer">Become a reviewer</Link>
               </Button>
             </div>
+            <p className="text-muted-foreground mt-5 text-sm">
+              Already have an account?{" "}
+              <Link
+                href="/login"
+                className="text-mark font-medium underline-offset-4 hover:underline"
+              >
+                Sign in
+              </Link>
+            </p>
           </div>
 
           <AnnotatedPageVisual className="float-slow lg:mr-6" />
@@ -181,35 +213,70 @@ export default function HomePage() {
           <ReviewSummaryVisual className="order-last lg:order-first" />
           <div>
             <h2 className="font-heading text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-              Feedback you can act on
+              Reviews authors can act on
             </h2>
             <p className="text-muted-foreground mt-5 max-w-lg text-lg leading-relaxed text-pretty">
-              Not a grade and a shrug. You get a score for each thing that matters in your kind of
-              document, a written summary, and your own file back with the changes marked.
+              Every author hears back with the decision, each reviewer’s score and comments, and
+              their own paper marked up, whether it was accepted or not.
             </p>
             <p className="text-muted-foreground mt-4 max-w-lg leading-relaxed text-pretty">
-              You never learn who your reviewer is, so they can say what they think.
+              Reviewers stay anonymous, so they can say what they think.
             </p>
           </div>
+        </section>
+
+        <section className={`${CONTAINER} reveal py-16 sm:py-20`}>
+          <h2 className="font-heading text-3xl font-medium tracking-tight sm:text-4xl">
+            Built for everyone involved
+          </h2>
+          <ul className="mt-10 grid gap-4 md:grid-cols-3">
+            {AUDIENCES.map((audience) => (
+              <li
+                key={audience.title}
+                data-glow
+                className="glass flex flex-col justify-between gap-6 rounded-2xl p-6"
+              >
+                <div>
+                  <span className="bg-mark/10 text-mark flex size-10 items-center justify-center rounded-xl">
+                    <audience.icon aria-hidden className="size-5" strokeWidth={1.75} />
+                  </span>
+                  <p className="mt-5 font-medium">{audience.title}</p>
+                  <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
+                    {audience.detail}
+                  </p>
+                </div>
+                <Link
+                  href={audience.cta.href}
+                  className="text-mark group inline-flex items-center gap-1.5 text-sm font-medium"
+                >
+                  {audience.cta.label}
+                  <ArrowRight
+                    aria-hidden
+                    className="size-4 transition-transform group-hover:translate-x-0.5"
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
         </section>
 
         <section className={`${CONTAINER} reveal py-16 sm:py-24`}>
           <div className="max-w-2xl">
             <h2 className="font-heading text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-              Judged for what it is
+              Every discipline, one platform
             </h2>
             <p className="text-muted-foreground mt-5 text-lg leading-relaxed text-pretty">
-              A CV is not marked on storytelling and a personal statement is not marked on
-              citations. Each kind of document has its own review criteria.
+              Reviewers choose the fields they know, and papers are matched to them by discipline,
+              from public health to tourism and events.
             </p>
           </div>
           <ul className="mt-10 flex flex-wrap gap-2.5">
-            {DOCUMENT_TYPES.map((type) => (
+            {DISCIPLINES.map((name) => (
               <li
-                key={type}
+                key={name}
                 className="glass rounded-full px-4 py-2 text-sm transition-transform duration-200 hover:-translate-y-0.5 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
               >
-                {type}
+                {name}
               </li>
             ))}
           </ul>
@@ -224,10 +291,10 @@ export default function HomePage() {
             />
             <div>
               <h2 className="font-heading text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-                Ready when your draft is.
+                Running a conference?
               </h2>
               <p className="text-panel-muted mt-3 max-w-md leading-relaxed">
-                Create an account, upload your document, and follow it through review.
+                Tell us your dates and topics, and we will set up your call for papers.
               </p>
             </div>
             <Button
@@ -235,8 +302,8 @@ export default function HomePage() {
               size="lg"
               className="group bg-panel-foreground text-panel hover:bg-panel-foreground/90 dark:bg-primary dark:text-primary-foreground h-11 shrink-0 px-5 text-sm"
             >
-              <Link href="/register">
-                Get started
+              <Link href="/help#contact">
+                Get in touch
                 <ArrowRight
                   aria-hidden
                   className="transition-transform group-hover:translate-x-0.5"
@@ -251,7 +318,12 @@ export default function HomePage() {
         <div
           className={`${CONTAINER} text-muted-foreground flex flex-wrap items-center justify-between gap-4 py-6 text-sm`}
         >
-          <span>ReviewFlow</span>
+          <span className="flex gap-4">
+            <span>Academic Peer Review</span>
+            <Link href="/help" className="hover:text-foreground underline-offset-4 hover:underline">
+              Help
+            </Link>
+          </span>
           {process.env.NODE_ENV === "development" && (
             <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
               <span>Local services:</span>

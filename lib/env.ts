@@ -23,7 +23,7 @@ const schema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     APP_URL: z.url(),
-    APP_NAME: z.string().min(1).default("ReviewFlow"),
+    APP_NAME: z.string().min(1).default("Academic Peer Review"),
 
     DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
 

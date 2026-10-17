@@ -8,7 +8,7 @@ import type { Role } from "@/lib/generated/prisma/client";
  * the Prisma client along with it.
  */
 
-export const SESSION_COOKIE_NAME = "reviewflow_session";
+export const SESSION_COOKIE_NAME = "apr_session";
 
 export const LOGIN_PATH = "/login";
 
@@ -16,6 +16,7 @@ export const LOGIN_PATH = "/login";
 export const HOME_PATH = {
   USER: "/dashboard",
   REVIEWER: "/reviewer",
+  ORGANISER: "/organiser",
   ADMIN: "/admin",
 } as const satisfies Record<Role, string>;
 

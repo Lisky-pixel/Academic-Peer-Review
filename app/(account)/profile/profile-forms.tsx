@@ -4,15 +4,19 @@ import { Camera, Trash2 } from "lucide-react";
 import { useActionState, useRef, useState, useTransition } from "react";
 import {
   changePasswordAction,
+  confirmCvUploadAction,
+  prepareCvUploadAction,
   removeAvatarAction,
+  saveReviewerProfileAction,
   updateProfileAction,
   uploadAvatarAction,
 } from "@/app/(account)/profile/actions";
-import { Field, FormError, FormMessage } from "@/components/form";
+import { FileUploader } from "@/components/file-uploader";
+import { Field, FormError, FormMessage, SelectField, TextAreaField } from "@/components/form";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { UserAvatar } from "@/components/user-avatar";
-import type { FormState } from "@/lib/auth/schemas";
+import { ACADEMIC_RANKS, type FormState } from "@/lib/auth/schemas";
 import { AVATAR_SIZE } from "@/lib/profile/avatar";
 
 const INITIAL: FormState = {};
@@ -128,7 +132,17 @@ export function AvatarUploader({ name, avatarUrl }: { name: string; avatarUrl: s
   );
 }
 
-export function ProfileForm({ name, bio, email }: { name: string; bio: string; email: string }) {
+export function ProfileForm({
+  name,
+  bio,
+  email,
+  institution,
+}: {
+  name: string;
+  bio: string;
+  email: string;
+  institution: string;
+}) {
   const [state, action, pending] = useActionState(updateProfileAction, INITIAL);
   const [bioLength, setBioLength] = useState(bio.length);
   const bioErrors = state.fieldErrors?.bio;
@@ -155,6 +169,16 @@ export function ProfileForm({ name, bio, email }: { name: string; bio: string; e
         hint="Your email is how you sign in and cannot be changed here."
         disabled
         required={false}
+      />
+
+      <Field
+        name="institution"
+        label="Institution or organisation"
+        autoComplete="organization"
+        required={false}
+        state={state}
+        defaultValue={state.values?.institution ?? institution}
+        hint="Reviewers are never given papers from their own institution."
       />
 
       <div className="space-y-2">
@@ -227,5 +251,120 @@ export function PasswordForm() {
         {pending ? "Changing…" : "Change password"}
       </Button>
     </form>
+  );
+}
+
+/** What a reviewer brings to matching. Saving it makes a submitter a reviewer too. */
+export function ReviewerProfileForm({
+  disciplines,
+  initial,
+  isReviewer,
+}: {
+  disciplines: Array<{ id: string; name: string }>;
+  initial: {
+    academicRank: string;
+    yearsExperience: string;
+    expertise: string;
+    disciplineIds: string[];
+  };
+  isReviewer: boolean;
+}) {
+  const [state, action, pending] = useActionState(saveReviewerProfileAction, INITIAL);
+  const chosen = new Set(
+    state.values?.disciplineIds !== undefined
+      ? state.values.disciplineIds.split(",").filter(Boolean)
+      : initial.disciplineIds,
+  );
+  const disciplineErrors = state.fieldErrors?.disciplineIds;
+
+  return (
+    <form action={action} className="space-y-5">
+      <FormError state={state} />
+      {state.success && (
+        <FormMessage tone="success">
+          {state.values?.became
+            ? "You are now a reviewer as well. Papers in your disciplines can be matched to you."
+            : "Your reviewer details have been saved."}
+        </FormMessage>
+      )}
+      <fieldset className="min-w-0 space-y-2" aria-describedby="disciplineIds-help">
+        <legend className="mb-2 text-sm font-medium">Disciplines you can review</legend>
+        <div className="border-border grid max-h-64 grid-cols-[minmax(0,1fr)] gap-1.5 overflow-y-auto rounded-xl border p-2 sm:grid-cols-2">
+          {disciplines.map((discipline) => (
+            <label
+              key={discipline.id}
+              className="has-[:checked]:bg-mark/8 flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm"
+            >
+              <input
+                type="checkbox"
+                name="disciplineIds"
+                value={discipline.id}
+                defaultChecked={chosen.has(discipline.id)}
+                className="accent-mark size-4 shrink-0"
+              />
+              {discipline.name}
+            </label>
+          ))}
+        </div>
+        <p
+          id="disciplineIds-help"
+          className={
+            disciplineErrors ? "text-destructive text-sm" : "text-muted-foreground text-sm"
+          }
+        >
+          {disciplineErrors ? disciplineErrors.join(" ") : "Papers are matched to you by these."}
+        </p>
+      </fieldset>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <SelectField
+          name="academicRank"
+          label="Academic rank"
+          state={state}
+          initial={initial.academicRank}
+          options={ACADEMIC_RANKS.map((rank) => ({ value: rank, label: rank }))}
+        />
+        <Field
+          name="yearsExperience"
+          label="Years of experience"
+          type="number"
+          min={0}
+          max={70}
+          inputMode="numeric"
+          state={state}
+          defaultValue={state.values?.yearsExperience ?? initial.yearsExperience}
+        />
+      </div>
+      <TextAreaField
+        name="expertise"
+        label="Areas of expertise"
+        rows={3}
+        state={state}
+        initial={initial.expertise}
+        required
+      />
+      <Button type="submit" size="lg" className="h-10 px-4 text-sm" disabled={pending}>
+        {pending ? "Saving…" : isReviewer ? "Save reviewer details" : "Become a reviewer"}
+      </Button>
+    </form>
+  );
+}
+
+export function CvUploader({
+  current,
+  maxBytes,
+}: {
+  current: { filename: string; sizeBytes: number } | null;
+  maxBytes: number;
+}) {
+  return (
+    <FileUploader
+      current={current}
+      maxBytes={maxBytes}
+      accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      formats="PDF or Word (.docx)"
+      inputLabel="Choose your CV"
+      prepare={prepareCvUploadAction}
+      confirm={confirmCvUploadAction}
+    />
   );
 }

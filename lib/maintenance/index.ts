@@ -2,52 +2,105 @@ import { deleteStaleUnverifiedUsers } from "@/lib/auth/registration";
 import { deleteExpiredSessions } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { dispatchQueuedEmails } from "@/lib/email/outbox";
-import { env } from "@/lib/env";
 import { formatDate } from "@/lib/format";
 import type { NotificationType, Prisma } from "@/lib/generated/prisma/client";
-import { findAdminIds, type Notice, queueNotices } from "@/lib/notifications";
-import { toAdmin, toReviewer } from "@/lib/notifications/messages";
+import { runMatching } from "@/lib/matching";
+import { findOrganiserIds, type Notice, queueNotices } from "@/lib/notifications";
+import { toOrganiser, toReviewer } from "@/lib/notifications/messages";
 import { deleteExpiredRateLimits } from "@/lib/rate-limit";
+import { SYSTEM_ACTOR } from "@/lib/workflow/state-machine";
 
 /**
  * The scheduled job: everything that has to happen because time passed
  * rather than because somebody clicked.
  *
- *   - remind reviewers whose review is due soon
- *   - tell administrators about reviews that are overdue
+ *   - match reviewers to papers in conferences whose call has just closed
+ *   - remind reviewers three times before a review is due
+ *   - tell organisers about reviews that are overdue
  *   - retry email that failed to send
  *   - delete expired sessions, rate-limit windows, used tokens and
  *     registrations that were never confirmed
  *
- * Every step is safe to run twice. Reminders are sent once per assignment:
- * before sending one, the job checks whether that person already has that
- * kind of notification for that submission since the assignment was made.
+ * Every step is safe to run twice.
  */
 
 const DAY_MS = 86_400_000;
 
-/** A review still in the reviewer's hands. */
+/** Reminders go this many days before the due date. */
+export const REMINDER_DAYS = [7, 3, 1] as const;
+
+/**
+ * How many reminders should have gone by now for a review due at `dueAt`:
+ * one once it is within seven days, two within three, three within one.
+ */
+export function remindersDue(dueAt: Date, now: Date): number {
+  const daysLeft = (dueAt.getTime() - now.getTime()) / DAY_MS;
+  if (daysLeft <= 0) return 0;
+  return REMINDER_DAYS.filter((days) => daysLeft <= days).length;
+}
+
+/** A review still in the reviewer's hands, on a paper still under review. */
 const OPEN_ASSIGNMENT = {
-  isActive: true,
   status: { in: ["PENDING", "ACCEPTED"] },
-  submission: { status: { in: ["ASSIGNED", "ACCEPTED", "IN_REVIEW", "REVISION_REQUESTED"] } },
+  submission: { status: "UNDER_REVIEW" },
 } satisfies Prisma.AssignmentWhereInput;
 
 const ASSIGNMENT_SELECT = {
+  id: true,
   reviewerId: true,
   dueAt: true,
   assignedAt: true,
-  submission: { select: { id: true, reference: true, title: true } },
+  remindersSent: true,
+  submission: { select: { id: true, reference: true, title: true, conferenceId: true } },
 } satisfies Prisma.AssignmentSelect;
 
-async function reminderLeadDays(): Promise<number> {
-  const setting = await db.appSetting.findUnique({ where: { key: "deadlineReminderLeadDays" } });
-  return typeof setting?.value === "number" && setting.value > 0
-    ? setting.value
-    : env.DEADLINE_REMINDER_LEAD_DAYS;
+/** Sends each reviewer the reminders that have come due: at 7, 3 and 1 days. */
+export async function sendDeadlineReminders(
+  now: Date = new Date(),
+  /** Narrows which assignments are considered. Tests use it to stay in their lane. */
+  scope: Prisma.AssignmentWhereInput = {},
+): Promise<number> {
+  const open = await db.assignment.findMany({
+    where: {
+      ...OPEN_ASSIGNMENT,
+      AND: scope,
+      dueAt: { gt: now, lte: new Date(now.getTime() + REMINDER_DAYS[0] * DAY_MS) },
+    },
+    select: ASSIGNMENT_SELECT,
+  });
+
+  let sent = 0;
+  for (const assignment of open) {
+    const due = remindersDue(assignment.dueAt, now);
+    if (due <= assignment.remindersSent) continue;
+
+    sent += await db.$transaction(async (tx) => {
+      // The count is part of the WHERE: two overlapping runs cannot both send.
+      const { count } = await tx.assignment.updateMany({
+        where: { id: assignment.id, remindersSent: assignment.remindersSent },
+        data: { remindersSent: due },
+      });
+      if (count !== 1) return 0;
+
+      const daysLeft = Math.ceil((assignment.dueAt.getTime() - now.getTime()) / DAY_MS);
+      await queueNotices(tx, [
+        {
+          userId: assignment.reviewerId,
+          submissionId: assignment.submission.id,
+          message: toReviewer.deadlineApproaching(
+            assignment.submission,
+            formatDate(assignment.dueAt),
+            daysLeft,
+          ),
+        },
+      ]);
+      return 1;
+    });
+  }
+  return sent;
 }
 
-/** Whether `userId` has already been sent this kind of notice for this assignment. */
+/** Whether `userId` has already been sent this kind of notice since `since`. */
 async function alreadyTold(
   tx: Prisma.TransactionClient,
   userId: string,
@@ -62,53 +115,7 @@ async function alreadyTold(
   );
 }
 
-/** Reminds each reviewer once that a review is due within the lead time. */
-export async function sendDeadlineReminders(
-  now: Date = new Date(),
-  /** Narrows which assignments are considered. Tests use it to stay in their lane. */
-  scope: Prisma.AssignmentWhereInput = {},
-): Promise<number> {
-  const leadDays = await reminderLeadDays();
-  const due = await db.assignment.findMany({
-    where: {
-      ...OPEN_ASSIGNMENT,
-      AND: scope,
-      dueAt: { gt: now, lte: new Date(now.getTime() + leadDays * DAY_MS) },
-    },
-    select: ASSIGNMENT_SELECT,
-  });
-
-  let sent = 0;
-  for (const assignment of due) {
-    const { submission, reviewerId } = assignment;
-    // One short transaction per reminder: the "already told?" check and the
-    // insert happen together, so two overlapping runs cannot both send it.
-    sent += await db.$transaction(async (tx) => {
-      if (
-        await alreadyTold(
-          tx,
-          reviewerId,
-          submission.id,
-          "DEADLINE_APPROACHING",
-          assignment.assignedAt,
-        )
-      ) {
-        return 0;
-      }
-      await queueNotices(tx, [
-        {
-          userId: reviewerId,
-          submissionId: submission.id,
-          message: toReviewer.deadlineApproaching(submission, formatDate(assignment.dueAt!)),
-        },
-      ]);
-      return 1;
-    });
-  }
-  return sent;
-}
-
-/** Tells every administrator, once, about each review that is past its due date. */
+/** Tells the organisers, once, about each review that is past its due date. */
 export async function escalateOverdueReviews(
   now: Date = new Date(),
   scope: Prisma.AssignmentWhereInput = {},
@@ -123,16 +130,14 @@ export async function escalateOverdueReviews(
     const { submission } = assignment;
     escalated += await db.$transaction(async (tx) => {
       const notices: Notice[] = [];
-      for (const adminId of await findAdminIds(tx)) {
-        if (
-          await alreadyTold(tx, adminId, submission.id, "REVIEW_OVERDUE", assignment.assignedAt)
-        ) {
+      for (const userId of await findOrganiserIds(tx, submission.conferenceId)) {
+        if (await alreadyTold(tx, userId, submission.id, "REVIEW_OVERDUE", assignment.assignedAt)) {
           continue;
         }
         notices.push({
-          userId: adminId,
+          userId,
           submissionId: submission.id,
-          message: toAdmin.reviewOverdue(submission, formatDate(assignment.dueAt!)),
+          message: toOrganiser.reviewOverdue(submission, formatDate(assignment.dueAt)),
         });
       }
       await queueNotices(tx, notices);
@@ -140,6 +145,26 @@ export async function escalateOverdueReviews(
     });
   }
   return escalated;
+}
+
+/**
+ * Matches reviewers in every conference whose call for papers has closed and
+ * that has not been matched since. Organisers can also run matching early
+ * from the conference page.
+ */
+export async function matchClosedConferences(now: Date = new Date()): Promise<number> {
+  const due = await db.conference.findMany({
+    where: {
+      submissionsCloseAt: { lte: now },
+      OR: [{ matchedAt: null }, { matchedAt: { lt: db.conference.fields.submissionsCloseAt } }],
+    },
+    select: { id: true },
+  });
+  let papers = 0;
+  for (const conference of due) {
+    papers += (await runMatching(conference.id, SYSTEM_ACTOR)).papers;
+  }
+  return papers;
 }
 
 /** Removes single-use tokens that are spent or expired; they can never be used again. */
@@ -151,6 +176,7 @@ export async function deleteDeadTokens(now: Date = new Date()): Promise<number> 
 }
 
 export type MaintenanceReport = {
+  papersMatched: number;
   remindersSent: number;
   overdueEscalated: number;
   emailsSent: number;
@@ -175,12 +201,14 @@ export async function runMaintenance(now: Date = new Date()): Promise<Maintenanc
     }
   };
 
+  const papersMatched = await attempt("matching", () => matchClosedConferences(now), 0);
   const remindersSent = await attempt("reminders", () => sendDeadlineReminders(now), 0);
   const overdueEscalated = await attempt("overdue", () => escalateOverdueReviews(now), 0);
-  // After the two steps above, so the mail they queued goes out in this run.
-  const emails = await attempt("email", () => dispatchQueuedEmails(100), { sent: 0, failed: 0 });
+  // After the steps above, so the mail they queued goes out in this run.
+  const emails = await attempt("email", () => dispatchQueuedEmails(200), { sent: 0, failed: 0 });
 
   return {
+    papersMatched,
     remindersSent,
     overdueEscalated,
     emailsSent: emails.sent,

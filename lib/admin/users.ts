@@ -22,7 +22,7 @@ const USER_SELECT = {
   _count: { select: { submissions: true } },
   // What a reviewer currently has on their plate.
   assignmentsToReview: {
-    where: { isActive: true, status: { in: ["PENDING", "ACCEPTED"] } },
+    where: { status: { in: ["PENDING", "ACCEPTED"] } },
     select: { id: true },
   },
   sessions: { orderBy: { lastUsedAt: "desc" }, take: 1, select: { lastUsedAt: true } },
@@ -116,4 +116,13 @@ export async function reactivateUser(admin: SessionUser, userId: string): Promis
     });
     return true;
   });
+}
+
+/** Headline numbers for the administrator's home page. */
+export async function findPlatformCounts() {
+  const [reviewers, submitters] = await Promise.all([
+    db.user.count({ where: { role: "REVIEWER", status: "ACTIVE" } }),
+    db.user.count({ where: { role: "USER", status: "ACTIVE" } }),
+  ]);
+  return { reviewers, submitters };
 }

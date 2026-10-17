@@ -19,6 +19,7 @@ import {
   forgotPasswordSchema,
   loginSchema,
   registerSchema,
+  reviewerProfileSchema,
   setPasswordSchema,
   verifyEmailSchema,
 } from "@/lib/auth/schemas";
@@ -92,13 +93,39 @@ export async function loginAction(_state: FormState, formData: FormData): Promis
 }
 
 export async function registerAction(_state: FormState, formData: FormData): Promise<FormState> {
-  const values = { name: text(formData, "name"), email: text(formData, "email") };
+  const values = {
+    accountType: text(formData, "accountType"),
+    name: text(formData, "name"),
+    email: text(formData, "email"),
+    institution: text(formData, "institution"),
+    academicRank: text(formData, "academicRank"),
+    yearsExperience: text(formData, "yearsExperience"),
+    expertise: text(formData, "expertise"),
+    disciplineIds: formData.getAll("disciplineIds").map(String).join(","),
+  };
   const parsed = registerSchema.safeParse({
     ...values,
     password: text(formData, "password"),
     confirmPassword: text(formData, "confirmPassword"),
   });
-  if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error), values };
+  const reviewer =
+    values.accountType === "reviewer"
+      ? reviewerProfileSchema.safeParse({
+          academicRank: values.academicRank,
+          yearsExperience: values.yearsExperience,
+          expertise: values.expertise,
+          disciplineIds: formData.getAll("disciplineIds").map(String),
+        })
+      : null;
+  if (!parsed.success || (reviewer && !reviewer.success)) {
+    return {
+      fieldErrors: {
+        ...(parsed.success ? {} : fieldErrors(parsed.error)),
+        ...(reviewer && !reviewer.success ? fieldErrors(reviewer.error) : {}),
+      },
+      values,
+    };
+  }
 
   const metadata = await getRequestMetadata();
   const limit = await rateLimiter.consume(
@@ -110,7 +137,7 @@ export async function registerAction(_state: FormState, formData: FormData): Pro
   // Everything that depends on whether the address is already registered
   // happens after the response has been sent, so neither what this returns nor
   // how long it takes can reveal it. The answer arrives by email instead.
-  const input = parsed.data;
+  const input = { ...parsed.data, reviewer: reviewer?.success ? reviewer.data : undefined };
   after(() =>
     startRegistration(input).catch((error) => {
       console.error("Registration failed", error);

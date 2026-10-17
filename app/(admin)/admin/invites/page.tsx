@@ -1,10 +1,15 @@
 import type { Metadata } from "next";
-import { cancelInviteAction, resendInviteAction } from "@/app/(admin)/admin/invites/actions";
-import { InviteForm } from "@/app/(admin)/admin/invites/invite-form";
+import {
+  cancelInviteAction,
+  resendInviteAction,
+  sendInviteAction,
+} from "@/app/(admin)/admin/invites/actions";
+import { InviteForm } from "@/components/invite-form";
 import { RoleArea } from "@/components/role-area";
 import { Button } from "@/components/ui/button";
 import { requireRole } from "@/lib/auth/guards";
 import { findPendingInvites } from "@/lib/auth/invites";
+import { ROLE_LABEL } from "@/lib/dto/admin";
 import { toPendingInviteDTO } from "@/lib/dto/invite";
 
 export const metadata: Metadata = { title: "Invitations" };
@@ -19,13 +24,13 @@ export default async function InvitesPage() {
     <RoleArea
       user={user}
       title="Invitations"
-      description="Reviewers and administrators can only join by invitation. Each link works once and lasts three days."
+      description="Organisers and administrators join only by invitation; reviewers can be invited or sign up themselves. Each link works once and lasts three days."
       current="/admin/invites"
     >
-      <section className="border-border bg-card rounded-xl border p-6">
+      <section className="glass rounded-2xl p-6">
         <h2 className="font-heading text-xl font-medium">Invite someone</h2>
         <div className="mt-5">
-          <InviteForm />
+          <InviteForm send={sendInviteAction} roles={["REVIEWER", "ORGANISER", "ADMIN"]} />
         </div>
       </section>
 
@@ -44,7 +49,7 @@ export default async function InvitesPage() {
             Nobody is waiting on an invitation.
           </p>
         ) : (
-          <ul className="border-border bg-card divide-border mt-4 divide-y overflow-hidden rounded-xl border">
+          <ul className="glass divide-border mt-4 divide-y overflow-hidden rounded-2xl">
             {invites.map((invite) => {
               const expired = invite.linkExpired || !invite.linkExpiresAt;
               return (
@@ -56,7 +61,7 @@ export default async function InvitesPage() {
                     <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
                       <span className="truncate">{invite.name}</span>
                       <span className="bg-secondary text-secondary-foreground rounded-full px-2 py-0.5 text-xs font-medium">
-                        {invite.role === "ADMIN" ? "Administrator" : "Reviewer"}
+                        {ROLE_LABEL[invite.role]}
                       </span>
                     </p>
                     <p className="text-muted-foreground truncate text-sm">{invite.email}</p>

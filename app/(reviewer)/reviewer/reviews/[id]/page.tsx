@@ -1,223 +1,228 @@
-import { Check, Download } from "lucide-react";
+import { CalendarClock, Check, Download, EyeOff, Scale } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { acceptAction } from "@/app/(reviewer)/reviewer/reviews/[id]/actions";
-import { DeclineForm } from "@/app/(reviewer)/reviewer/reviews/[id]/decline-form";
-import { ReviewForm } from "@/app/(reviewer)/reviewer/reviews/[id]/review-form";
+import {
+  DeclineForm,
+  MarkedUpUploader,
+  ReviewForm,
+} from "@/app/(reviewer)/reviewer/reviews/[id]/forms";
 import { BackLink } from "@/components/back-link";
 import { DocumentPane } from "@/components/document-pane";
 import { FormMessage } from "@/components/form";
 import { RoleArea } from "@/components/role-area";
-import { StatusPill } from "@/components/status-pill";
+import { Recommendation, ScoreMeter } from "@/components/score";
 import { Button } from "@/components/ui/button";
 import { requireRole } from "@/lib/auth/guards";
-import { type ReviewerSubmissionDTO, toReviewerSubmissionDTO } from "@/lib/dto/review";
+import { toReviewerPaperDTO } from "@/lib/dto/review";
 import { env } from "@/lib/env";
-import { formatBytes } from "@/lib/files/validate";
 import { formatDate, isUuid } from "@/lib/format";
-import { findReviewerSubmission, findTemplateFor } from "@/lib/reviews";
+import { findReviewerPaper } from "@/lib/reviews";
 import { findDocumentPreview } from "@/lib/reviews/preview";
+import { PAPER_TYPE_LABEL } from "@/lib/submissions/schema";
 
 export const metadata: Metadata = { title: "Review" };
 
-const PHASE_LABEL = {
-  invited: "Waiting for your answer",
-  working: "In progress",
-  submitted: "Submitted",
-} as const;
-
-export default async function ReviewPage({ params }: PageProps<"/reviewer/reviews/[id]">) {
+export default async function ReviewPage({
+  params,
+  searchParams,
+}: PageProps<"/reviewer/reviews/[id]">) {
   const user = await requireRole("REVIEWER");
   const { id } = await params;
   if (!isUuid(id)) notFound();
 
-  // Scoped to submissions this reviewer holds: anything else is not found.
-  const record = await findReviewerSubmission(user.id, id);
-  if (!record) notFound();
-  const template = await findTemplateFor(record);
-  const submission = toReviewerSubmissionDTO(record, template, user.id);
+  const record = await findReviewerPaper(user.id, id);
+  const paper = record ? toReviewerPaperDTO(record) : null;
+  if (!paper) notFound();
 
+  const { sent } = await searchParams;
+  const pending = paper.assignment.status === "PENDING";
+  const submitted = paper.review?.submitted ?? false;
   const preview =
-    submission.phase === "invited" ? null : await findDocumentPreview(user.id, submission.id);
+    paper.file && !pending ? await findDocumentPreview(user.id, id) : ({ type: "none" } as const);
 
   return (
     <RoleArea
       user={user}
-      wide={submission.phase !== "invited"}
-      eyebrow={<BackLink href="/reviewer">Review queue</BackLink>}
-      title={submission.title}
-      description={
-        <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <span className="tabular-nums">{submission.reference}</span>
-          <span>{submission.documentType}</span>
-          <StatusPill tone={submission.phase === "submitted" ? "success" : "progress"}>
-            {submission.revisionRequested ? "Changes requested" : PHASE_LABEL[submission.phase]}
-          </StatusPill>
-          {submission.dueAt && (
-            <span className={submission.overdue ? "text-warning font-medium" : undefined}>
-              {submission.overdue ? "Overdue since" : "Due"} {formatDate(submission.dueAt)}
-            </span>
-          )}
+      wide
+      title={paper.title}
+      eyebrow={
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <BackLink href="/reviewer">Reviews</BackLink>
+          <span aria-hidden>·</span>
+          <span className="font-mono text-xs">{paper.reference}</span>
         </span>
       }
-      current="/reviewer"
+      description={paper.conferenceName}
     >
-      {submission.phase === "invited" && <Invitation submission={submission} />}
-
-      {submission.phase !== "invited" && preview && (
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-x-10 gap-y-10 lg:grid-cols-2">
-          <div className="space-y-6 lg:sticky lg:top-24 lg:self-start">
-            {submission.document && (
-              <DocumentPane
-                label="The document"
-                filename={submission.document.filename}
-                sizeBytes={submission.document.sizeBytes}
-                downloadHref={`/reviewer/reviews/${submission.id}/document`}
-                preview={preview}
-              />
-            )}
-            <Brief submission={submission} />
-          </div>
-
-          <div className="min-w-0">
-            {submission.phase === "working" ? (
-              <>
-                {submission.revisionRequested && (
-                  <FormMessage tone="error" className="mb-8">
-                    <span className="font-medium">The administrator asked for changes.</span>
-                    {submission.revisionNote && (
-                      <span className="mt-1 block whitespace-pre-wrap">
-                        {submission.revisionNote}
-                      </span>
-                    )}
-                  </FormMessage>
-                )}
-                <ReviewForm
-                  submissionId={submission.id}
-                  criteria={submission.criteria}
-                  initialAnswers={submission.answers}
-                  annotated={submission.annotated}
-                  maxBytes={env.MAX_UPLOAD_BYTES}
-                  revisionRequested={submission.revisionRequested}
-                />
-              </>
-            ) : (
-              <SubmittedReview submission={submission} />
-            )}
-          </div>
-        </div>
+      {sent && submitted && (
+        <FormMessage tone="success">
+          Thank you. Your review has been sent to the organisers.
+        </FormMessage>
       )}
+
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+        <div className="min-w-0 space-y-6">
+          <section aria-labelledby="about" className="glass space-y-5 rounded-3xl p-6 sm:p-8">
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Chip>{paper.topic}</Chip>
+              <Chip>{paper.discipline}</Chip>
+              <Chip>{PAPER_TYPE_LABEL[paper.paperType]}</Chip>
+              {paper.assignment.isTiebreaker && (
+                <Chip>
+                  <Scale aria-hidden className="size-3.5" />
+                  Tie-breaker
+                </Chip>
+              )}
+            </div>
+            <div className="space-y-2">
+              <h2 id="about" className="text-muted-foreground text-sm font-medium">
+                Abstract
+              </h2>
+              <p className="leading-relaxed whitespace-pre-line">{paper.abstract}</p>
+            </div>
+            <div className="border-border text-muted-foreground border-t pt-5 text-sm">
+              {paper.doubleBlind ? (
+                <p className="flex items-start gap-2">
+                  <EyeOff aria-hidden className="mt-0.5 size-4 shrink-0" />
+                  This is a double-blind review: the authors are hidden from you, and you are hidden
+                  from them.
+                </p>
+              ) : (
+                <p>
+                  <span className="text-foreground font-medium">{paper.authorNames}</span>
+                  {paper.institution && <> · {paper.institution}</>}
+                </p>
+              )}
+            </div>
+          </section>
+
+          {paper.file && !pending && (
+            <DocumentPane
+              label="The paper"
+              filename={paper.file.filename}
+              sizeBytes={paper.file.sizeBytes}
+              downloadHref={`/reviewer/reviews/${paper.id}/paper`}
+              preview={preview}
+            />
+          )}
+          {!paper.file && paper.format === "ABSTRACT_ONLY" && (
+            <p className="glass text-muted-foreground rounded-2xl p-5 text-sm">
+              This conference reviews abstracts. The authors did not attach a full paper.
+            </p>
+          )}
+        </div>
+
+        <aside className="min-w-0 space-y-6">
+          <div className="glass flex items-center gap-3 rounded-2xl p-4 text-sm">
+            <CalendarClock aria-hidden className="text-mark size-5 shrink-0" strokeWidth={1.75} />
+            <span>
+              {submitted ? (
+                <>Sent on {formatDate(paper.review!.submittedAt!)}</>
+              ) : (
+                <>
+                  Due by <span className="font-medium">{formatDate(paper.assignment.dueAt)}</span>
+                </>
+              )}
+            </span>
+          </div>
+
+          {pending && (
+            <section aria-labelledby="answer" className="glass space-y-5 rounded-3xl p-6">
+              <div className="space-y-2">
+                <h2 id="answer" className="font-heading text-xl font-medium">
+                  Will you review this paper?
+                </h2>
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  You were matched by discipline. Accept to open the full paper and write your
+                  review.
+                </p>
+              </div>
+              <form action={acceptAction}>
+                <input type="hidden" name="paperId" value={paper.id} />
+                <Button type="submit" size="lg" className="h-11 w-full text-sm">
+                  <Check aria-hidden />
+                  Accept and start
+                </Button>
+              </form>
+              <DeclineForm paperId={paper.id} />
+            </section>
+          )}
+
+          {!pending && paper.canWrite && (
+            <>
+              <section aria-labelledby="your-review" className="glass rounded-3xl p-6">
+                <h2 id="your-review" className="font-heading mb-5 text-xl font-medium">
+                  Your review
+                </h2>
+                <ReviewForm
+                  paperId={paper.id}
+                  initial={{
+                    score: paper.review?.score ?? null,
+                    recommend: paper.review?.recommend ?? null,
+                    comments: paper.review?.comments ?? "",
+                  }}
+                />
+              </section>
+              <section aria-labelledby="marked-up" className="glass space-y-4 rounded-3xl p-6">
+                <div className="space-y-1">
+                  <h2 id="marked-up" className="font-heading text-xl font-medium">
+                    Marked-up copy{" "}
+                    <span className="text-muted-foreground text-base">(optional)</span>
+                  </h2>
+                  <p className="text-muted-foreground text-sm leading-relaxed">
+                    Download the paper, add your comments and tracked changes, and upload it here.
+                    Your name is removed from the file before anyone sees it.
+                  </p>
+                </div>
+                <MarkedUpUploader
+                  paperId={paper.id}
+                  current={paper.review?.markedUpCopy ?? null}
+                  maxBytes={env.MAX_UPLOAD_BYTES}
+                />
+              </section>
+              <DeclineForm paperId={paper.id} />
+            </>
+          )}
+
+          {submitted && paper.review && (
+            <section aria-labelledby="sent-review" className="glass space-y-4 rounded-3xl p-6">
+              <h2 id="sent-review" className="font-heading text-xl font-medium">
+                Your review
+              </h2>
+              <div className="flex flex-wrap items-center gap-3">
+                {paper.review.score && <ScoreMeter score={paper.review.score} />}
+                {paper.review.recommend !== null && (
+                  <Recommendation recommend={paper.review.recommend} />
+                )}
+              </div>
+              <p className="text-sm leading-relaxed whitespace-pre-line">{paper.review.comments}</p>
+              {paper.review.markedUpCopy && (
+                <Button asChild variant="outline" size="lg">
+                  <a href={`/reviewer/reviews/${paper.id}/annotated`}>
+                    <Download aria-hidden />
+                    Your marked-up copy
+                  </a>
+                </Button>
+              )}
+            </section>
+          )}
+
+          {!pending && !paper.canWrite && !submitted && (
+            <p className="glass text-muted-foreground rounded-2xl p-5 text-sm leading-relaxed">
+              A decision has been made on this paper, so your review is no longer needed. Thank you.
+            </p>
+          )}
+        </aside>
+      </div>
     </RoleArea>
   );
 }
 
-function Brief({ submission }: { submission: ReviewerSubmissionDTO }) {
-  const rows: Array<[string, string | null]> = [
-    ["Written by", submission.authorName ?? "Hidden for this review"],
-    ["What it is for", submission.purpose],
-    ["Instructions", submission.instructions],
-    ["Where to focus", submission.focusAreas],
-    ["Anything else", submission.description],
-  ];
-
+function Chip({ children }: { children: React.ReactNode }) {
   return (
-    <section className="space-y-3">
-      <h2 className="font-heading text-xl font-medium">What the author asked for</h2>
-      <dl className="border-border divide-border divide-y border-y">
-        {rows
-          .filter(([, value]) => value)
-          .map(([label, value]) => (
-            <div
-              key={label}
-              className="grid gap-1 py-3.5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-5"
-            >
-              <dt className="text-muted-foreground text-sm">{label}</dt>
-              <dd className="text-sm leading-relaxed whitespace-pre-wrap">{value}</dd>
-            </div>
-          ))}
-      </dl>
-    </section>
-  );
-}
-
-/** Before accepting: the brief, and the two answers. */
-function Invitation({ submission }: { submission: ReviewerSubmissionDTO }) {
-  return (
-    <div className="max-w-2xl space-y-10">
-      <Brief submission={submission} />
-      <div className="space-y-5">
-        <p className="text-muted-foreground text-sm leading-relaxed">
-          Accept to read the document and write your review
-          {submission.dueAt ? `, due ${formatDate(submission.dueAt)}` : ""}. The author will never
-          be told who reviewed their work.
-        </p>
-        <form action={acceptAction}>
-          <input type="hidden" name="submissionId" value={submission.id} />
-          <Button type="submit" size="lg" className="h-11 px-5 text-sm">
-            <Check aria-hidden />
-            Accept assignment
-          </Button>
-        </form>
-        <DeclineForm submissionId={submission.id} />
-      </div>
-    </div>
-  );
-}
-
-/** After submitting: what was sent, read-only. */
-function SubmittedReview({ submission }: { submission: ReviewerSubmissionDTO }) {
-  return (
-    <div className="space-y-8">
-      <FormMessage tone="success">
-        Submitted{submission.submittedAt ? ` ${formatDate(submission.submittedAt)}` : ""}. An
-        administrator will read it before it reaches the author.
-      </FormMessage>
-
-      <section className="space-y-5">
-        <h2 className="font-heading text-xl font-medium">Your review</h2>
-        <dl className="space-y-6">
-          {submission.criteria.map((criterion) => {
-            const answer = submission.answers[criterion.id];
-            return (
-              <div key={criterion.id} className="space-y-1.5">
-                <dt className="flex flex-wrap items-baseline justify-between gap-x-4 font-medium">
-                  {criterion.label}
-                  {answer?.rating != null && (
-                    <span className="text-mark text-sm tabular-nums">
-                      {answer.rating} of {criterion.maxRating}
-                    </span>
-                  )}
-                </dt>
-                <dd className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap">
-                  {answer?.comment || (answer?.rating == null ? "No answer" : "")}
-                </dd>
-              </div>
-            );
-          })}
-        </dl>
-      </section>
-
-      {submission.annotated && (
-        <section className="space-y-3">
-          <h2 className="font-heading text-xl font-medium">Annotated copy</h2>
-          <div className="border-border bg-card flex flex-wrap items-center justify-between gap-4 rounded-xl border p-4">
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-medium">
-                {submission.annotated.filename}
-              </span>
-              <span className="text-muted-foreground block text-xs">
-                {formatBytes(submission.annotated.sizeBytes)} · your name has been removed
-              </span>
-            </span>
-            <Button asChild variant="outline" size="lg">
-              <a href={`/reviewer/reviews/${submission.id}/annotated`}>
-                <Download aria-hidden />
-                Download
-              </a>
-            </Button>
-          </div>
-        </section>
-      )}
-    </div>
+    <span className="bg-muted text-muted-foreground inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium">
+      {children}
+    </span>
   );
 }

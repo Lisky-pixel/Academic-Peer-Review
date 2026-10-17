@@ -1,113 +1,80 @@
 import type { SubmissionStatus } from "@/lib/generated/prisma/client";
 
 /**
- * What an author is shown instead of the internal status.
+ * What a submitter is shown instead of the internal status.
  *
- * The twelve workflow states describe the operation — who accepted what, and
- * whether a review was sent back for changes. An author needs a simpler and
- * steadier story: where their document is, and whether anything is ready.
- * Collapsing here also means internal back-and-forth (a reviewer declining,
- * an admin asking for a revision) never shows up as the author's submission
- * appearing to go backwards.
+ * "Reviews complete" is the organisers' business: to the submitter the paper
+ * is still under review until the decision is made, so the reviews arriving
+ * one by one, a reviewer declining or a tie-breaker being added never shows
+ * up as the paper appearing to move backwards or stall.
  */
-export type AuthorStage =
-  | "draft"
-  | "awaiting_reviewer"
-  | "with_reviewer"
-  | "in_review"
-  | "final_checks"
-  | "ready"
-  | "completed"
-  | "cancelled";
+export type SubmitterStage =
+  "draft" | "submitted" | "under_review" | "accepted" | "rejected" | "withdrawn";
 
-const STAGE: Record<SubmissionStatus, AuthorStage> = {
+const STAGE: Record<SubmissionStatus, SubmitterStage> = {
   DRAFT: "draft",
-  SUBMITTED: "awaiting_reviewer",
-  PENDING_ASSIGNMENT: "awaiting_reviewer",
-  ASSIGNED: "with_reviewer",
-  ACCEPTED: "with_reviewer",
-  IN_REVIEW: "in_review",
-  REVIEW_SUBMITTED: "final_checks",
-  UNDER_ADMIN_REVIEW: "final_checks",
-  REVISION_REQUESTED: "final_checks",
-  APPROVED: "ready",
-  DELIVERED: "completed",
-  CANCELLED: "cancelled",
+  SUBMITTED: "submitted",
+  UNDER_REVIEW: "under_review",
+  REVIEWS_COMPLETE: "under_review",
+  ACCEPTED: "accepted",
+  REJECTED: "rejected",
+  WITHDRAWN: "withdrawn",
 };
 
-export function authorStage(status: SubmissionStatus): AuthorStage {
+export function submitterStage(status: SubmissionStatus): SubmitterStage {
   return STAGE[status];
 }
 
-export type Tone = "neutral" | "progress" | "success" | "muted";
+export type Tone = "neutral" | "progress" | "success" | "muted" | "warning";
 
-export const STAGE_LABEL: Record<AuthorStage, string> = {
+export const STAGE_LABEL: Record<SubmitterStage, string> = {
   draft: "Draft",
-  awaiting_reviewer: "Awaiting a reviewer",
-  with_reviewer: "Reviewer assigned",
-  in_review: "In review",
-  final_checks: "Final checks",
-  ready: "Ready to read",
-  completed: "Completed",
-  cancelled: "Cancelled",
+  submitted: "Submitted",
+  under_review: "Under review",
+  accepted: "Accepted",
+  rejected: "Not accepted",
+  withdrawn: "Withdrawn",
 };
 
-export const STAGE_TONE: Record<AuthorStage, Tone> = {
+export const STAGE_TONE: Record<SubmitterStage, Tone> = {
   draft: "neutral",
-  awaiting_reviewer: "progress",
-  with_reviewer: "progress",
-  in_review: "progress",
-  final_checks: "progress",
-  ready: "success",
-  completed: "success",
-  cancelled: "muted",
+  submitted: "progress",
+  under_review: "progress",
+  accepted: "success",
+  rejected: "muted",
+  withdrawn: "muted",
 };
 
-/** The steps of the progress track on a submission, in order. */
-export const PROGRESS_STEPS: Array<{ stage: AuthorStage; label: string }> = [
-  { stage: "awaiting_reviewer", label: "Submitted" },
-  { stage: "with_reviewer", label: "Reviewer assigned" },
-  { stage: "in_review", label: "In review" },
-  { stage: "final_checks", label: "Final checks" },
-  { stage: "ready", label: "Ready" },
+/** The steps of the progress track on a paper, in order. */
+export const PROGRESS_STEPS: Array<{ stage: SubmitterStage; label: string }> = [
+  { stage: "submitted", label: "Submitted" },
+  { stage: "under_review", label: "Under review" },
+  { stage: "accepted", label: "Decision" },
 ];
 
-/**
- * How many progress steps are complete or current, 0–5. A completed
- * submission has passed every step; drafts and cancellations have none.
- */
-export function progressOf(stage: AuthorStage): number {
-  if (stage === "completed") return PROGRESS_STEPS.length;
+/** How many progress steps are complete or current, 0–3. */
+export function progressOf(stage: SubmitterStage): number {
+  if (stage === "accepted" || stage === "rejected") return PROGRESS_STEPS.length;
   return PROGRESS_STEPS.findIndex((step) => step.stage === stage) + 1;
 }
 
-/** Labels for the internal status, for administrators. */
+/** Labels for the internal status, for organisers. */
 export const STATUS_LABEL: Record<SubmissionStatus, string> = {
   DRAFT: "Draft",
-  SUBMITTED: "Submitted",
-  PENDING_ASSIGNMENT: "Needs a reviewer",
-  ASSIGNED: "Assigned",
+  SUBMITTED: "Waiting for reviewers",
+  UNDER_REVIEW: "Under review",
+  REVIEWS_COMPLETE: "Ready for decision",
   ACCEPTED: "Accepted",
-  IN_REVIEW: "In review",
-  REVIEW_SUBMITTED: "Review submitted",
-  UNDER_ADMIN_REVIEW: "Needs approval",
-  REVISION_REQUESTED: "Revision requested",
-  APPROVED: "Approved",
-  DELIVERED: "Delivered",
-  CANCELLED: "Cancelled",
+  REJECTED: "Rejected",
+  WITHDRAWN: "Withdrawn",
 };
 
 export const STATUS_TONE: Record<SubmissionStatus, Tone> = {
   DRAFT: "neutral",
   SUBMITTED: "progress",
-  PENDING_ASSIGNMENT: "progress",
-  ASSIGNED: "progress",
-  ACCEPTED: "progress",
-  IN_REVIEW: "progress",
-  REVIEW_SUBMITTED: "progress",
-  UNDER_ADMIN_REVIEW: "progress",
-  REVISION_REQUESTED: "progress",
-  APPROVED: "success",
-  DELIVERED: "success",
-  CANCELLED: "muted",
+  UNDER_REVIEW: "progress",
+  REVIEWS_COMPLETE: "warning",
+  ACCEPTED: "success",
+  REJECTED: "muted",
+  WITHDRAWN: "muted",
 };

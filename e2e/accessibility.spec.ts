@@ -64,7 +64,31 @@ async function expectNoViolations(page: Page, label: string) {
   expect(summary, `${label} has accessibility violations`).toEqual([]);
 }
 
-const PUBLIC_PAGES = ["/", "/login", "/register", "/forgot-password", "/invite/not-a-real-token"];
+const PUBLIC_PAGES = [
+  "/",
+  "/login",
+  "/register",
+  "/register?as=reviewer",
+  "/forgot-password",
+  "/help",
+  "/invite/not-a-real-token",
+];
+
+/** Visits each path, then the first link matching `detail` found on the last one. */
+async function checkPages(page: Page, paths: string[], detail?: { from: string; link: string }) {
+  for (const path of paths) {
+    await page.goto(path);
+    await expectNoViolations(page, path);
+  }
+  if (!detail) return;
+  await page.goto(detail.from);
+  const first = page.locator(`a[href^="${detail.link}"]`).first();
+  if ((await first.count()) > 0) {
+    const href = (await first.getAttribute("href"))!;
+    await page.goto(href);
+    await expectNoViolations(page, href);
+  }
+}
 
 for (const scheme of ["light", "dark"] as const) {
   test.describe(`${scheme} theme`, () => {
@@ -77,70 +101,57 @@ for (const scheme of ["light", "dark"] as const) {
       });
     }
 
-    test("the author's pages have no detectable accessibility violations", async ({ page }) => {
-      await login(page, "user1@reviewflow.local");
-      for (const path of ["/dashboard", "/dashboard/submissions/new", "/profile"]) {
-        await page.goto(path);
-        await expectNoViolations(page, path);
-      }
-      // A submission page, whichever state the first one is in.
-      await page.goto("/dashboard");
-      const first = page.locator('a[href^="/dashboard/submissions/"]:not([href$="/new"])').first();
-      if ((await first.count()) > 0) {
-        await first.click();
-        await page.waitForURL(/\/dashboard\/submissions\/[0-9a-f-]{36}$/);
-        await expectNoViolations(page, "a submission");
-      }
+    test("the submitter's pages have no detectable accessibility violations", async ({ page }) => {
+      await login(page, "user1@apr.local");
+      await checkPages(page, ["/dashboard", "/profile", "/help"], {
+        from: "/dashboard",
+        link: "/dashboard/papers/new",
+      });
+      await checkPages(page, [], { from: "/dashboard", link: "/dashboard/papers/01" });
     });
 
     test("the reviewer's pages have no detectable accessibility violations", async ({ page }) => {
-      await login(page, "reviewer2@reviewflow.local");
-      for (const path of ["/reviewer", "/reviewer?tab=active", "/reviewer?tab=completed"]) {
-        await page.goto(path);
-        await expectNoViolations(page, path);
-      }
-      const first = page.locator('a[href^="/reviewer/reviews/"]').first();
-      if ((await first.count()) > 0) {
-        await first.click();
-        await page.waitForURL(/\/reviewer\/reviews\/[0-9a-f-]{36}$/);
-        await expectNoViolations(page, "a review");
-      }
+      await login(page, "reviewer4@apr.local");
+      await checkPages(
+        page,
+        ["/reviewer", "/reviewer?tab=active", "/reviewer?tab=completed", "/profile"],
+        { from: "/reviewer?tab=completed", link: "/reviewer/reviews/" },
+      );
+    });
+
+    test("the organiser's pages have no detectable accessibility violations", async ({ page }) => {
+      await login(page, "organiser@apr.local");
+      await checkPages(page, ["/organiser", "/organiser/reviewers"], {
+        from: "/organiser",
+        link: "/organiser/conferences/",
+      });
+      const conference = page.url();
+      await checkPages(page, [`${conference}?tab=reviewers`, `${conference}?tab=reports`], {
+        from: conference,
+        link: `${new URL(conference).pathname}/papers/`,
+      });
     });
 
     test("the administrator's pages have no detectable accessibility violations", async ({
       page,
     }) => {
-      await login(page, "admin@reviewflow.local");
-      for (const path of [
-        "/admin",
-        "/admin?view=all",
-        "/admin/users",
-        "/admin/invites",
-        "/admin/document-types",
-        "/admin/activity",
-        "/admin/reports",
-      ]) {
-        await page.goto(path);
-        await expectNoViolations(page, path);
-      }
-      await page.goto("/admin/document-types");
-      await page.locator('a[href^="/admin/document-types/"]').first().click();
-      await page.waitForURL(/\/admin\/document-types\/[0-9a-f-]{36}$/);
-      await expectNoViolations(page, "a document type");
-
-      await page.goto("/admin?view=all");
-      const submission = page.locator('a[href^="/admin/submissions/"]').first();
-      if ((await submission.count()) > 0) {
-        await submission.click();
-        await page.waitForURL(/\/admin\/submissions\/[0-9a-f-]{36}$/);
-        await expectNoViolations(page, "an admin submission");
-      }
+      await login(page, "admin@apr.local");
+      await checkPages(
+        page,
+        ["/admin", "/admin/conferences/new", "/admin/users", "/admin/invites", "/admin/activity"],
+        { from: "/admin", link: "/organiser/conferences/" },
+      );
+      const href = new URL(page.url()).pathname.replace(
+        "/organiser/conferences/",
+        "/admin/conferences/",
+      );
+      await checkPages(page, [href]);
     });
   });
 }
 
 test("the menus are operable from the keyboard alone", async ({ page }) => {
-  await login(page, "user1@reviewflow.local");
+  await login(page, "user1@apr.local");
 
   // Tab to the account menu, open it with the keyboard, and reach Sign out.
   const menu = page.getByRole("button", { name: "Account menu" });
@@ -172,21 +183,24 @@ test("the application's own pages do not violate its Content Security Policy", a
 
   await page.goto("/");
   await page.goto("/login");
-  await login(page, "admin@reviewflow.local");
-  for (const path of ["/admin", "/admin/reports", "/admin/document-types", "/profile"]) {
+  await login(page, "admin@apr.local");
+  for (const path of ["/admin", "/organiser/reviewers", "/help", "/profile"]) {
     await page.goto(path);
   }
   // Opening menus exercises the client-side code that renders into portals.
   await page.getByRole("button", { name: /^Notifications/ }).click();
   await page.keyboard.press("Escape");
   // A document preview in a sandboxed frame, and one drawn by the PDF worker.
-  await page.goto("/dev/emails?t=review-ready");
-  await expect(page.frameLocator("iframe").getByText("Your review is ready")).toBeVisible();
-  await page.goto("/admin?view=all");
-  const submission = page.locator('a[href^="/admin/submissions/"]').first();
-  if ((await submission.count()) > 0) {
-    await submission.click();
-    await page.waitForURL(/\/admin\/submissions\/[0-9a-f-]{36}$/);
+  await page.goto("/dev/emails?t=accepted");
+  await expect(page.frameLocator("iframe").getByText("Your paper has been accepted")).toBeVisible();
+  await page.goto("/admin");
+  const conference = page.locator('a[href^="/organiser/conferences/"]').first();
+  await conference.click();
+  await page.waitForURL(/\/organiser\/conferences\/[0-9a-f-]{36}$/);
+  const paper = page.locator('a[href*="/papers/"]').first();
+  if ((await paper.count()) > 0) {
+    await paper.click();
+    await page.waitForURL(/\/papers\/[0-9a-f-]{36}$/);
     await page.waitForTimeout(1500);
   }
 

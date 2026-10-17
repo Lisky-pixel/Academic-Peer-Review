@@ -42,7 +42,11 @@ describe.skipIf(!dbAvailable)("profile", () => {
   it("updates the name and bio, trimming both", async () => {
     const user = await createUser();
 
-    await updateProfile(user.id, { name: "  Ada Lovelace ", bio: "  Writes about engines. " });
+    await updateProfile(user.id, {
+      name: "  Ada Lovelace ",
+      bio: "  Writes about engines. ",
+      institution: "",
+    });
 
     const dto = toOwnProfileDTO((await findProfile(user.id))!);
     expect(dto).toMatchObject({ name: "Ada Lovelace", bio: "Writes about engines." });
@@ -50,9 +54,9 @@ describe.skipIf(!dbAvailable)("profile", () => {
 
   it("stores an emptied bio as nothing, not as an empty string", async () => {
     const user = await createUser();
-    await updateProfile(user.id, { name: "Ada", bio: "Something" });
+    await updateProfile(user.id, { name: "Ada", bio: "Something", institution: "" });
 
-    await updateProfile(user.id, { name: "Ada", bio: "   " });
+    await updateProfile(user.id, { name: "Ada", bio: "   ", institution: "" });
 
     expect((await db.user.findUniqueOrThrow({ where: { id: user.id } })).bio).toBeNull();
     expect(toOwnProfileDTO((await findProfile(user.id))!).bio).toBe("");
@@ -65,7 +69,17 @@ describe.skipIf(!dbAvailable)("profile", () => {
     const dto = toOwnProfileDTO((await findProfile(user.id))!);
 
     expect(Object.keys(dto).sort()).toEqual(
-      ["avatarUrl", "bio", "email", "id", "memberSince", "name", "role"].sort(),
+      [
+        "avatarUrl",
+        "bio",
+        "email",
+        "id",
+        "institution",
+        "memberSince",
+        "name",
+        "reviewer",
+        "role",
+      ].sort(),
     );
     expect(JSON.stringify(dto)).not.toContain("argon2");
   });

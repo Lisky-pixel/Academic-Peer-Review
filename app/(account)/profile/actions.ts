@@ -8,9 +8,19 @@ import {
   changePasswordSchema,
   type FormState,
   profileSchema,
+  reviewerProfileSchema,
   zodFieldErrors,
 } from "@/lib/auth/schemas";
-import { changePassword, removeAvatar, setAvatar, updateProfile } from "@/lib/profile";
+import { REJECTION_MESSAGE } from "@/lib/files/validate";
+import {
+  changePassword,
+  confirmCvUpload,
+  prepareCvUpload,
+  removeAvatar,
+  saveReviewerProfile,
+  setAvatar,
+  updateProfile,
+} from "@/lib/profile";
 import { AVATAR_MAX_BYTES } from "@/lib/profile/avatar";
 
 /** Every action here acts on the signed-in account and no other. */
@@ -34,6 +44,7 @@ export async function updateProfileAction(
   const values = {
     name: String(formData.get("name") ?? ""),
     bio: String(formData.get("bio") ?? ""),
+    institution: String(formData.get("institution") ?? ""),
   };
   const parsed = profileSchema.safeParse(values);
   if (!parsed.success) return { fieldErrors: zodFieldErrors(parsed.error), values };
@@ -102,4 +113,69 @@ export async function changePasswordAction(
   }
 
   return { success: true };
+}
+
+export async function saveReviewerProfileAction(
+  _state: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const { user } = await requireSession();
+
+  const values = {
+    academicRank: String(formData.get("academicRank") ?? ""),
+    yearsExperience: String(formData.get("yearsExperience") ?? ""),
+    expertise: String(formData.get("expertise") ?? ""),
+    disciplineIds: formData.getAll("disciplineIds").map(String).join(","),
+  };
+  const parsed = reviewerProfileSchema.safeParse({
+    ...values,
+    disciplineIds: formData.getAll("disciplineIds").map(String),
+  });
+  if (!parsed.success) return { fieldErrors: zodFieldErrors(parsed.error), values };
+
+  const result = await saveReviewerProfile(user, parsed.data);
+  if (!result.ok) {
+    return { error: "Only submitters and reviewers have a reviewer profile.", values };
+  }
+
+  refresh();
+  return { success: true, values: { ...values, became: result.becameReviewer ? "yes" : "" } };
+}
+
+export async function prepareCvUploadAction(file: {
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+}): Promise<{ url: string; key: string; mimeType: string } | { error: string }> {
+  const { user } = await requireSession();
+  const result = await prepareCvUpload(user.id, {
+    filename: String(file.filename),
+    mimeType: String(file.mimeType),
+    sizeBytes: Number(file.sizeBytes),
+  });
+  if (!result.ok) {
+    if (result.reason === "no_profile") return { error: "Save your reviewer details first." };
+    if (result.reason === "unsupported_type") {
+      return { error: "Upload your CV as a PDF or Word file." };
+    }
+    return { error: REJECTION_MESSAGE[result.reason] };
+  }
+  return { url: result.url, key: result.key, mimeType: result.mimeType };
+}
+
+export async function confirmCvUploadAction(
+  key: string,
+  filename: string,
+): Promise<{ error?: string }> {
+  const { user } = await requireSession();
+  const result = await confirmCvUpload(user.id, String(key), String(filename));
+  if (!result.ok) {
+    if (result.reason === "no_profile") return { error: "Save your reviewer details first." };
+    if (result.reason === "not_uploaded") {
+      return { error: "The upload did not finish. Please try again." };
+    }
+    return { error: REJECTION_MESSAGE[result.reason] };
+  }
+  revalidatePath("/profile");
+  return {};
 }

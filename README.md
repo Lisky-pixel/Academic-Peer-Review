@@ -1,23 +1,24 @@
-# ReviewFlow
+# Academic Peer Review
 
-A web platform for managing document review. An author submits written work, an
-administrator assigns it to a reviewer, the reviewer returns structured feedback
-and an annotated file, and the administrator approves it before the author sees
-anything.
+Peer review for academic conferences. Organisers open a call for papers,
+authors submit, papers are matched automatically to reviewers in the right
+discipline, reviewers score and comment, and organisers decide.
 
 **Reviewers are anonymous to authors**, everywhere: in the interface, in emails,
-and inside the files authors download.
+and inside the files authors download. Conferences can also hide authors from
+reviewers (double-blind, the default).
 
 ```
-Author submits ──▶ [GATE 1: admin assigns reviewer] ──▶ Reviewer reviews & uploads
-                                                               │
-Author reads/downloads ◀── [GATE 2: admin approves] ◀──────────┘
-                                       │
-                                       └──▶ Revision requested ──▶ back to reviewer
+Author submits ──▶ call closes ──▶ matched to reviewers by discipline
+                                            │
+                       reviewers score 1–5, recommend, comment
+                                            │
+                     disagree? ──▶ a tie-breaker reviewer is added
+                                            │
+Author reads every review ◀── organiser accepts or rejects
 ```
 
-To put it on the internet, follow [docs/DEPLOY.md](docs/DEPLOY.md). The original
-plan and its phases are in [docs/PLAN.md](docs/PLAN.md).
+To put it on the internet, follow [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Stack
 
@@ -55,13 +56,17 @@ pnpm dev
 
 No email leaves your machine in development; Mailpit catches all of it.
 
-Seeded accounts, all with the password `Password123!`:
+Seeded accounts, all with the password `Password123!`, at `@apr.local`:
 
-| Role          | Email                                                      |
-| ------------- | ---------------------------------------------------------- |
-| Administrator | `admin@reviewflow.local`                                   |
-| Reviewer      | `reviewer1@reviewflow.local`, `reviewer2@reviewflow.local` |
-| Author        | `user1@`, `user2@`, `user3@` (all `@reviewflow.local`)     |
+| Role          | Email                                               |
+| ------------- | --------------------------------------------------- |
+| Administrator | `admin@apr.local`                                   |
+| Organiser     | `organiser@apr.local`                               |
+| Reviewer      | `reviewer1@` … `reviewer8@` (different disciplines) |
+| Submitter     | `user1@`, `user2@`, `user3@`                        |
+
+The seed also creates two demo conferences with papers at every stage: under
+review, waiting for a tie-breaker, ready for a decision, accepted and rejected.
 
 **Restart `pnpm dev` after any database migration.** The running server caches
 the database client and will fail on new columns until restarted.
@@ -75,13 +80,14 @@ pnpm typecheck           # TypeScript
 pnpm lint                # ESLint
 pnpm format              # Prettier
 
-pnpm test                # unit and database tests (Vitest), about a minute
+pnpm test                # unit and database tests (Vitest)
 pnpm test:e2e            # browser tests (Playwright); needs the stack up and seeded
 
 pnpm db:migrate          # create and apply a migration in development
 pnpm db:deploy           # apply migrations (production)
-pnpm db:seed             # reference data + development accounts
-pnpm db:seed:reference   # reference data only; safe for production
+pnpm db:seed             # disciplines, development accounts and demo conferences
+pnpm db:seed:reference   # disciplines only; safe for production
+pnpm db:seed:demo        # demo conferences on a live site (needs DEMO_PASSWORD)
 pnpm db:reset            # drop, migrate, seed
 pnpm admin:create --email you@example.com --name "Your Name"
                          # the first administrator of a fresh deployment
@@ -93,22 +99,24 @@ The first run of the browser tests needs `pnpm exec playwright install chromium`
 
 ```
 app/                 pages, route handlers and server actions, by role
-  (auth)/            sign in, register, reset, invite, verify
-  (user)/            the author's dashboard and submissions
-  (reviewer)/        the reviewer's queue and workspace
-  (admin)/           submissions, people, document types, activity, reports
-  (account)/         profile and notifications, shared by every role
-  api/cron/          the scheduled maintenance endpoint
+  (auth)/            sign in, sign up (submitter or reviewer), reset, invite, verify
+  (user)/            a submitter's papers
+  (reviewer)/        a reviewer's queue and review page
+  (organiser)/       conferences, papers, reviewers, reports, export
+  (admin)/           conferences, organisers, payments, people, activity
+  (account)/         profile, reviewer details and CV, shared by every role
+  help/              questions and the contact form
+  api/cron/          the daily job
 lib/
   auth/              sessions, passwords, guards, invites, registration
-  workflow/          the state machine
-  submissions/ assignments/ reviews/ approvals/    one folder per stage
+  workflow/          the paper state machine
+  matching/          choosing reviewers, tie-breakers
+  submissions/ reviews/ conferences/    one folder per side
   dto/               what each audience is allowed to see
   files/             upload validation and metadata scrubbing
   storage/ email/    providers, behind interfaces
   notifications/     in-app and email notices, and all their wording
-  maintenance/       reminders, escalation, clean-up
-  admin/             people, document types, templates, activity, reports
+  maintenance/       matching after the call closes, reminders, clean-up
 proxy.ts             route protection and the Content Security Policy
 prisma/              schema, migrations, seed
 e2e/                 browser tests
@@ -116,49 +124,41 @@ e2e/                 browser tests
 
 ### The state machine
 
-A submission's status is changed in exactly one place: `transition()` in
+A paper's status is changed in exactly one place: `transition()` in
 [lib/workflow/state-machine.ts](lib/workflow/state-machine.ts). In one database
 transaction it checks the move is legal for that person, updates the status,
 writes the activity log, and queues notifications. The table of legal moves is
 [lib/workflow/transitions.ts](lib/workflow/transitions.ts).
 
-| From                              | Event            | To                   | Who                                |
-| --------------------------------- | ---------------- | -------------------- | ---------------------------------- |
-| `DRAFT`                           | submit           | `PENDING_ASSIGNMENT` | author                             |
-| `PENDING_ASSIGNMENT`              | assign           | `ASSIGNED`           | admin                              |
-| `ASSIGNED`                        | accept           | `ACCEPTED`           | reviewer                           |
-| `ASSIGNED`                        | decline          | `PENDING_ASSIGNMENT` | reviewer                           |
-| `ASSIGNED`/`ACCEPTED`/`IN_REVIEW` | reassign         | `ASSIGNED`           | admin                              |
-| `ACCEPTED`                        | start review     | `IN_REVIEW`          | reviewer (on first save)           |
-| `IN_REVIEW`                       | submit review    | `UNDER_ADMIN_REVIEW` | reviewer                           |
-| `UNDER_ADMIN_REVIEW`              | request revision | `REVISION_REQUESTED` | admin                              |
-| `REVISION_REQUESTED`              | resubmit         | `UNDER_ADMIN_REVIEW` | reviewer                           |
-| `UNDER_ADMIN_REVIEW`              | approve          | `APPROVED`           | admin                              |
-| `APPROVED`                        | deliver          | `DELIVERED`          | system, on the author's first view |
-| any unfinished state              | cancel           | `CANCELLED`          | admin; author before assignment    |
+| From                              | Event            | To                    | Who                               |
+| --------------------------------- | ---------------- | --------------------- | --------------------------------- |
+| `DRAFT`                           | submit           | `SUBMITTED`           | submitter                         |
+| `SUBMITTED`                       | start review     | `UNDER_REVIEW`        | system or organiser, on matching  |
+| `UNDER_REVIEW`                    | complete reviews | `REVIEWS_COMPLETE`    | the last reviewer, or system      |
+| `REVIEWS_COMPLETE`                | reopen reviews   | `UNDER_REVIEW`        | organiser adds a reviewer         |
+| `UNDER_REVIEW`/`REVIEWS_COMPLETE` | accept / reject  | `ACCEPTED`/`REJECTED` | organiser                         |
+| `DRAFT`/`SUBMITTED`               | withdraw         | `WITHDRAWN`           | submitter (organiser at any time) |
 
-Authors never see these statuses. They see a simpler stage
-([lib/submissions/stage.ts](lib/submissions/stage.ts)), so internal back-and-forth
-never looks like their submission going backwards.
+Submitters see a simpler stage ([lib/submissions/stage.ts](lib/submissions/stage.ts)):
+"reviews complete" still reads as "under review" until the decision.
 
 ### Anonymity
 
 Three independent layers, so that one failing does not leak an identity.
 
 1. **What each audience can be given** is fixed by types in `lib/dto/`. The
-   author-facing shapes have no field that could hold a reviewer's name; adding
-   one is a compile error, and tests lock the field lists.
-2. **File bytes.** [lib/files/scrub.ts](lib/files/scrub.ts) removes the reviewer
-   from Word and PDF files: document properties, the author of every tracked
-   change, comment and annotation, and embedded metadata. Only the scrubbed copy
-   is stored, renamed from the submission's reference.
+   submitter-facing shapes have no field that could hold a reviewer's name;
+   reviews are labelled "Reviewer 1, 2, 3".
+2. **File bytes.** [lib/files/scrub.ts](lib/files/scrub.ts) removes names from
+   Word and PDF metadata: document properties, the author of every tracked
+   change, comment and annotation. Papers are scrubbed on upload, marked-up
+   copies before anyone sees them.
 3. **Messages.** All notification wording is in
    [lib/notifications/messages.ts](lib/notifications/messages.ts). The functions
-   that write to authors take only a reference and a title, and email is always
-   sent from the platform's own address.
+   that write to submitters take only a reference and a title.
 
-The opposite direction, whether a reviewer may see who the author is, is a
-per-submission switch resolved only in `toReviewerSubmissionDTO()`.
+Whether reviewers see the authors is the conference's double-blind setting,
+resolved only in `toReviewerPaperDTO()`.
 
 ### Security
 
@@ -182,9 +182,10 @@ per-submission switch resolved only in `toReviewerSubmissionDTO()`.
 use the real Postgres and MinIO from Docker and skip, with a warning, if those
 are not running. They clean up the accounts they create.
 
-`pnpm test:e2e` drives a real browser through every flow, including the full
-three-role journey with a revision bounce, and checks accessibility and the
-Content Security Policy.
+`lib/workflow/flow.db.test.ts` runs a paper through the whole journey against
+the real database: submit, match, a conflict of interest, disagreement, a
+tie-breaker, the decision, and the anonymous reviews. `pnpm test:e2e` checks
+accessibility in both themes and the Content Security Policy on every page.
 
 Working notes for whoever, or whatever, picks the code up next are in
 [CLAUDE.md](CLAUDE.md).

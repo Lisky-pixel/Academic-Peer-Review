@@ -14,18 +14,18 @@ export const metadata: Metadata = {
 const PROMISES = [
   {
     icon: EyeOff,
-    title: "Your reviewer stays anonymous",
-    body: "Feedback is written to be useful, not polite. You never learn who read your work.",
+    title: "Blind review",
+    body: "Authors and reviewers never learn who the other is, so reviews can be honest.",
   },
   {
     icon: ListChecks,
-    title: "Feedback with structure",
-    body: "Every document type has its own criteria, so a CV is not judged like an essay.",
+    title: "Matched by discipline",
+    body: "Papers go to reviewers who know the field, never to their own institution.",
   },
   {
     icon: Route,
     title: "Nothing gets lost",
-    body: "Each submission has a reference number and a status you can check at any time.",
+    body: "Every paper has a reference number and a status you can check at any time.",
   },
 ];
 
@@ -50,7 +50,7 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
 
           <div className="max-w-md space-y-9">
             <h2 className="font-heading text-4xl leading-[1.1] font-medium tracking-tight text-balance xl:text-5xl">
-              Considered feedback on the writing that matters.
+              Peer review for academic conferences.
             </h2>
             <ul className="space-y-3">
               {PROMISES.map((promise) => (
@@ -73,7 +73,7 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
           </div>
 
           <p className="text-panel-muted text-sm">
-            Personal statements, essays, CVs, cover letters and more.
+            For organisers, authors and reviewers, in every discipline.
           </p>
         </div>
       </aside>

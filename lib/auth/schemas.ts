@@ -46,10 +46,52 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Enter your password.").max(128),
 });
 
+export const ACADEMIC_RANKS = [
+  "Professor",
+  "Associate Professor",
+  "Senior Lecturer",
+  "Lecturer",
+  "Assistant Lecturer",
+  "Postdoctoral Researcher",
+  "Research Fellow",
+  "PhD Candidate",
+  "Industry Practitioner",
+  "Other",
+] as const;
+
+/** What a reviewer tells us about themselves, at signup or on their profile. */
+export const reviewerProfileSchema = z.object({
+  academicRank: z.enum(ACADEMIC_RANKS, "Choose your academic rank."),
+  yearsExperience: z.coerce
+    .number("Enter your years of experience.")
+    .int("Enter a whole number of years.")
+    .min(0, "Enter your years of experience.")
+    .max(70, "Enter your years of experience."),
+  expertise: z
+    .string()
+    .trim()
+    .min(3, "Describe your areas of expertise.")
+    .max(1000, "Keep this under 1,000 characters."),
+  disciplineIds: z
+    .array(z.uuid())
+    .min(1, "Choose at least one discipline you can review.")
+    .max(10, "Choose at most ten disciplines."),
+});
+
+export type ReviewerProfileInput = z.infer<typeof reviewerProfileSchema>;
+
+const institution = z
+  .string()
+  .trim()
+  .min(2, "Enter your institution or organisation.")
+  .max(300, "Keep this under 300 characters.");
+
 export const registerSchema = z
   .object({
+    accountType: z.enum(["submitter", "reviewer"], "Choose how you will use the platform."),
     name: z.string().trim().min(2, "Enter your name.").max(100),
     email,
+    institution,
     password: newPassword,
     confirmPassword: z.string(),
   })
@@ -73,11 +115,12 @@ export const verifyEmailSchema = z.object({
 export const inviteSchema = z.object({
   name: z.string().trim().min(2, "Enter their name.").max(100),
   email,
-  role: z.enum(["REVIEWER", "ADMIN"]),
+  role: z.enum(["REVIEWER", "ORGANISER", "ADMIN"]),
 });
 
 export const profileSchema = z.object({
   name: z.string().trim().min(2, "Enter your name.").max(100),
+  institution: z.string().trim().max(300, "Keep this under 300 characters."),
   bio: z.string().trim().max(280, "Keep this to 280 characters."),
 });
 

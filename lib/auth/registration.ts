@@ -1,6 +1,6 @@
 import { consumeToken, findValidToken, issueToken } from "@/lib/auth/account-tokens";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
-import { normaliseEmail } from "@/lib/auth/schemas";
+import { normaliseEmail, type ReviewerProfileInput } from "@/lib/auth/schemas";
 import type { SessionUser } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { sendEmail } from "@/lib/email";
@@ -18,9 +18,9 @@ import { rateLimitKey, rateLimiter } from "@/lib/rate-limit";
  * what differs is the email that arrives, and only the owner of the inbox
  * sees that.
  *
- * There is deliberately no `role` parameter anywhere in this file. It is the
- * only code path the public can reach that creates an account, and it creates
- * authors. Reviewers and admins exist only through lib/auth/invites.ts.
+ * The public chooses between two roles here, and only two: a submitter
+ * (USER) or a reviewer. Organisers and administrators exist only through
+ * lib/auth/invites.ts — the `accountType` type below is what keeps it so.
  */
 
 export const VERIFY_TTL_HOURS = 24;
@@ -54,12 +54,19 @@ async function sendVerificationEmail(user: { id: string; email: string; name: st
  * "check your inbox" message whatever happened here.
  */
 export async function startRegistration(input: {
+  accountType: "submitter" | "reviewer";
   name: string;
   email: string;
+  institution: string;
   password: string;
+  /** Required when signing up as a reviewer. */
+  reviewer?: ReviewerProfileInput;
 }): Promise<void> {
   const email = normaliseEmail(input.email);
   const name = input.name.trim();
+  const institution = input.institution.trim();
+  const role = input.accountType === "reviewer" ? "REVIEWER" : "USER";
+  if (role === "REVIEWER" && !input.reviewer) return;
 
   const limit = await rateLimiter.consume(rateLimitKey("register:email", email), PER_EMAIL_RULE);
   if (!limit.allowed) return;
@@ -107,16 +114,39 @@ export async function startRegistration(input: {
   try {
     // Signing up again before confirming replaces the earlier attempt, so a
     // mistyped password or a lost email is fixed by simply starting over.
-    user = existing
-      ? await db.user.update({
-          where: { id: existing.id },
-          data: { name, passwordHash },
-          select: { id: true, email: true, name: true },
-        })
-      : await db.user.create({
-          data: { name, email, passwordHash, role: "USER", status: "UNVERIFIED" },
-          select: { id: true, email: true, name: true },
+    user = await db.$transaction(async (tx) => {
+      const saved = existing
+        ? await tx.user.update({
+            where: { id: existing.id },
+            data: { name, passwordHash, institution, role },
+            select: { id: true, email: true, name: true },
+          })
+        : await tx.user.create({
+            data: { name, email, passwordHash, institution, role, status: "UNVERIFIED" },
+            select: { id: true, email: true, name: true },
+          });
+
+      if (input.reviewer) {
+        // Only disciplines that exist; anything else in the form is ignored.
+        const disciplines = await tx.discipline.findMany({
+          where: { id: { in: input.reviewer.disciplineIds }, isActive: true },
+          select: { id: true },
         });
+        const profile = {
+          academicRank: input.reviewer.academicRank,
+          yearsExperience: input.reviewer.yearsExperience,
+          expertise: input.reviewer.expertise,
+        };
+        await tx.reviewerProfile.upsert({
+          where: { userId: saved.id },
+          create: { userId: saved.id, ...profile, disciplines: { connect: disciplines } },
+          update: { ...profile, disciplines: { set: disciplines } },
+        });
+      } else {
+        await tx.reviewerProfile.deleteMany({ where: { userId: saved.id } });
+      }
+      return saved;
+    });
   } catch (error) {
     // Two simultaneous signups for one address: the unique index lets one
     // through, and that one sends the email.

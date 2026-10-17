@@ -15,7 +15,7 @@ import { render } from "@react-email/render";
 /**
  * The one email layout. Every notification is this component with different
  * words in it, so they all look alike and there is one place to change how
- * ReviewFlow email looks.
+ * Academic Peer Review email looks.
  *
  * Colours are literal values, not theme tokens: an email client does not load
  * our stylesheet, and many strip anything but inline styles.

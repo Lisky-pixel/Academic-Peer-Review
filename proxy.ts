@@ -21,7 +21,7 @@ import { LOGIN_PATH, SESSION_COOKIE_NAME } from "@/lib/auth/routes";
  */
 
 /** Areas that need a signed-in user. Keep in step with HOME_PATH. */
-const PROTECTED = ["/dashboard", "/reviewer", "/admin", "/profile"];
+const PROTECTED = ["/dashboard", "/reviewer", "/organiser", "/admin", "/profile"];
 
 function isProtected(pathname: string): boolean {
   return PROTECTED.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));

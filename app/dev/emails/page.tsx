@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { renderNotificationEmail } from "@/lib/email/template";
-import { type Message, toAdmin, toAuthor, toReviewer } from "@/lib/notifications/messages";
+import { type Message, toOrganiser, toReviewer, toSubmitter } from "@/lib/notifications/messages";
 
 export const metadata: Metadata = { title: "Email previews" };
 
@@ -14,38 +14,48 @@ export const metadata: Metadata = { title: "Email previews" };
 
 const SAMPLE = {
   id: "00000000-0000-7000-8000-000000000147",
-  reference: "RF-2026-0147",
-  title: "Personal statement for MSc Transport Planning",
+  reference: "APR-2026-0147",
+  title: "Mobile money adoption among smallholder farmers in Northern Ghana",
+  conferenceId: "00000000-0000-7000-8000-000000000001",
 };
+const CONFERENCE = "African Conference on Sustainable Development 2026";
 
 const GROUPS: Array<{ audience: string; messages: Array<[string, Message]> }> = [
   {
-    audience: "To the author",
+    audience: "To the submitter",
     messages: [
-      ["Submission received", toAuthor.submissionReceived(SAMPLE)],
-      ["Reviewer assigned", toAuthor.reviewerAssigned(SAMPLE)],
-      ["Review ready", toAuthor.reviewReady(SAMPLE)],
-      ["Submission cancelled", toAuthor.cancelled(SAMPLE)],
+      ["Paper received", toSubmitter.submissionReceived(SAMPLE, CONFERENCE)],
+      ["Accepted", toSubmitter.decisionMade(SAMPLE, true, CONFERENCE)],
+      ["Not accepted", toSubmitter.decisionMade(SAMPLE, false, CONFERENCE)],
     ],
   },
   {
     audience: "To the reviewer",
     messages: [
-      ["Assignment received", toReviewer.assignmentReceived(SAMPLE, "14 Oct 2026")],
-      ["Assignment withdrawn", toReviewer.assignmentCancelled(SAMPLE)],
-      ["Deadline approaching", toReviewer.deadlineApproaching(SAMPLE, "14 Oct 2026")],
-      ["Revision requested", toReviewer.revisionRequested(SAMPLE)],
+      ["Paper assigned", toReviewer.assignmentReceived(SAMPLE, "14 Dec 2026")],
+      ["Review no longer needed", toReviewer.assignmentCancelled(SAMPLE)],
+      ["Reminder: 7 days", toReviewer.deadlineApproaching(SAMPLE, "14 Dec 2026", 7)],
+      ["Reminder: 1 day", toReviewer.deadlineApproaching(SAMPLE, "14 Dec 2026", 1)],
     ],
   },
   {
-    audience: "To administrators",
+    audience: "To organisers",
     messages: [
-      ["Submission created", toAdmin.submissionCreated(SAMPLE)],
-      ["Assignment accepted", toAdmin.assignmentAccepted(SAMPLE)],
-      ["Assignment declined", toAdmin.assignmentDeclined(SAMPLE)],
-      ["Review submitted", toAdmin.reviewSubmitted(SAMPLE, false)],
-      ["Revised review submitted", toAdmin.reviewSubmitted(SAMPLE, true)],
-      ["Review overdue", toAdmin.reviewOverdue(SAMPLE, "14 Oct 2026")],
+      ["Needs reviewers", toOrganiser.needsReviewers(SAMPLE, 1)],
+      ["Reviews complete", toOrganiser.reviewsComplete(SAMPLE)],
+      ["Review overdue", toOrganiser.reviewOverdue(SAMPLE, "14 Dec 2026")],
+      [
+        "Payment receipt",
+        toOrganiser.paymentReceipt({
+          conferenceId: SAMPLE.conferenceId,
+          conferenceName: CONFERENCE,
+          receiptNumber: "APR-R-2026-0007",
+          amount: "NGN 250,000.00",
+          description: "Standard package, 2026 edition",
+          paidOn: "16 Oct 2026",
+          reference: "TRF-88412",
+        }),
+      ],
     ],
   },
 ];
@@ -59,7 +69,7 @@ export default async function EmailPreviewsPage({ searchParams }: PageProps<"/de
   const all = GROUPS.flatMap((group) => group.messages);
   const [label, message] = all.find(([name]) => slug(name) === t) ?? all[0]!;
   const { html, text } = await renderNotificationEmail(message.email.content, {
-    appName: "ReviewFlow",
+    appName: "Academic Peer Review",
     appUrl: "http://localhost:3000",
   });
 

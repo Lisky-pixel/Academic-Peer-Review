@@ -27,7 +27,7 @@ describe("route protection", () => {
   );
 
   it("lets a request carrying the session cookie through to the guards", () => {
-    expect(visit("/admin", "reviewflow_session=anything").headers.get("location")).toBeNull();
+    expect(visit("/admin", "apr_session=anything").headers.get("location")).toBeNull();
   });
 
   it.each(["/", "/login", "/register", "/invite/abc", "/administrators", "/dashboards"])(
@@ -43,9 +43,9 @@ describe("Content Security Policy", () => {
 
   it("is set on every page, public or protected", () => {
     expect(header("/")).toContain("default-src 'self'");
-    expect(
-      visit("/admin", "reviewflow_session=x").headers.get("content-security-policy"),
-    ).toContain("default-src 'self'");
+    expect(visit("/admin", "apr_session=x").headers.get("content-security-policy")).toContain(
+      "default-src 'self'",
+    );
   });
 
   it("uses a different nonce for every response", () => {

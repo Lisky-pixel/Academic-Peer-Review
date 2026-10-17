@@ -8,7 +8,7 @@ export type PendingInviteDTO = {
   id: string;
   name: string;
   email: string;
-  role: "REVIEWER" | "ADMIN";
+  role: "REVIEWER" | "ORGANISER" | "ADMIN";
   invitedAt: string;
   /** Null when no link is outstanding. */
   linkExpiresAt: string | null;
@@ -25,7 +25,7 @@ export function toPendingInviteDTO(
     id: record.id,
     name: record.name,
     email: record.email,
-    role: record.role === "ADMIN" ? "ADMIN" : "REVIEWER",
+    role: record.role === "USER" ? "REVIEWER" : record.role,
     invitedAt: record.createdAt.toISOString(),
     linkExpiresAt: expiresAt?.toISOString() ?? null,
     linkExpired: !expiresAt || expiresAt.getTime() <= now.getTime(),

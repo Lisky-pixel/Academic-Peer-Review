@@ -13,10 +13,11 @@ const newsreader = Newsreader({ subsets: ["latin"], variable: "--font-serif" });
 
 export const metadata: Metadata = {
   title: {
-    default: "ReviewFlow",
-    template: "%s · ReviewFlow",
+    default: "Academic Peer Review",
+    template: "%s · Academic Peer Review",
   },
-  description: "Submit documents for structured, anonymous review.",
+  description:
+    "Peer review for academic conferences: submit papers, review them anonymously, decide with confidence.",
   // Submissions and reviews are private; keep them out of search indexes.
   robots: { index: false, follow: false },
 };

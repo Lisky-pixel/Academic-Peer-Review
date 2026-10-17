@@ -11,7 +11,7 @@ import type { Message } from "@/lib/notifications/messages";
  * Nothing is sent here — see lib/email/outbox.ts.
  */
 
-export type Notice = { userId: string; submissionId: string; message: Message };
+export type Notice = { userId: string; submissionId?: string | null; message: Message };
 
 export async function queueNotices(tx: Prisma.TransactionClient, notices: Notice[]): Promise<void> {
   if (notices.length === 0) return;
@@ -28,7 +28,7 @@ export async function queueNotices(tx: Prisma.TransactionClient, notices: Notice
   await tx.notification.createMany({
     data: deliverable.map(({ userId, submissionId, message }) => ({
       userId,
-      submissionId,
+      submissionId: submissionId ?? null,
       type: message.type,
       title: message.title,
       body: message.body,
@@ -41,15 +41,28 @@ export async function queueNotices(tx: Prisma.TransactionClient, notices: Notice
       toEmail: emailOf.get(userId)!,
       template: message.type,
       subject: message.email.subject,
-      submissionId,
+      submissionId: submissionId ?? null,
       status: "QUEUED" as const,
       payload: message.email.content,
     })),
   });
 }
 
-/** Every administrator who can currently sign in. */
-export async function findAdminIds(tx: Prisma.TransactionClient): Promise<string[]> {
+/**
+ * Who is told about a conference's papers: its organisers who can sign in.
+ * A conference with none (not yet staffed) falls back to the administrators,
+ * so nothing goes unheard.
+ */
+export async function findOrganiserIds(
+  tx: Prisma.TransactionClient,
+  conferenceId: string,
+): Promise<string[]> {
+  const organisers = await tx.conferenceOrganiser.findMany({
+    where: { conferenceId, user: { status: "ACTIVE" } },
+    select: { userId: true },
+  });
+  if (organisers.length > 0) return organisers.map((row) => row.userId);
+
   const admins = await tx.user.findMany({
     where: { role: "ADMIN", status: "ACTIVE" },
     select: { id: true },

@@ -93,10 +93,10 @@ function replaceElementText(
   });
 }
 
-function scrubWordPart(path: string, xml: string, removed: Set<string>): string {
+function scrubWordPart(path: string, xml: string, removed: Set<string>, label: string): string {
   if (path === "docProps/core.xml") {
-    let out = replaceElementText(xml, "dc:creator", ANONYMOUS_AUTHOR, removed);
-    out = replaceElementText(out, "cp:lastModifiedBy", ANONYMOUS_AUTHOR, removed);
+    let out = replaceElementText(xml, "dc:creator", label, removed);
+    out = replaceElementText(out, "cp:lastModifiedBy", label, removed);
     return out;
   }
 
@@ -115,7 +115,7 @@ function scrubWordPart(path: string, xml: string, removed: Set<string>): string 
   if (path.startsWith("word/")) {
     // Tracked changes, comments, and anything else that names an author:
     // w:author, w15:author, w16…:author all match.
-    let out = replaceAttribute(xml, "author", ANONYMOUS_AUTHOR, removed);
+    let out = replaceAttribute(xml, "author", label, removed);
     out = replaceAttribute(out, "initials", ANONYMOUS_INITIALS, removed);
     // people.xml ties each commenter to a directory identity, e.g.
     // w15:userId="S::rita@example.org::<guid>". Drop the element outright.
@@ -133,7 +133,7 @@ function scrubWordPart(path: string, xml: string, removed: Set<string>): string 
   return xml;
 }
 
-function scrubDocx(bytes: Uint8Array): ScrubResult {
+function scrubDocx(bytes: Uint8Array, label: string): ScrubResult {
   let unpacked = 0;
   let tooLarge = false;
   let entries: Record<string, Uint8Array>;
@@ -157,7 +157,9 @@ function scrubDocx(bytes: Uint8Array): ScrubResult {
 
   for (const [path, content] of Object.entries(entries)) {
     const isXml = path.endsWith(".xml") || path.endsWith(".rels");
-    output[path] = isXml ? strToU8(scrubWordPart(path, strFromU8(content), removed)) : content;
+    output[path] = isXml
+      ? strToU8(scrubWordPart(path, strFromU8(content), removed, label))
+      : content;
   }
 
   return { ok: true, bytes: zipSync(output), removed: [...removed] };
@@ -171,7 +173,7 @@ function textOf(value: unknown): string | null {
   return value instanceof PDFString || value instanceof PDFHexString ? value.decodeText() : null;
 }
 
-async function scrubPdfStrict(bytes: Uint8Array): Promise<ScrubResult> {
+async function scrubPdfStrict(bytes: Uint8Array, label: string): Promise<ScrubResult> {
   let document: PDFDocument;
   try {
     // updateMetadata: false stops pdf-lib stamping itself in as the producer.
@@ -213,8 +215,8 @@ async function scrubPdfStrict(bytes: Uint8Array): Promise<ScrubResult> {
       const annotation = annotations.lookupMaybe(i, PDFDict);
       if (!annotation?.has(titleKey)) continue;
       const text = textOf(annotation.lookup(titleKey));
-      if (text && text !== ANONYMOUS_AUTHOR) removed.add(text);
-      annotation.set(titleKey, PDFHexString.fromText(ANONYMOUS_AUTHOR));
+      if (text && text !== label) removed.add(text);
+      annotation.set(titleKey, PDFHexString.fromText(label));
     }
   }
 
@@ -229,9 +231,9 @@ async function scrubPdfStrict(bytes: Uint8Array): Promise<ScrubResult> {
  * fail somewhere inside. Any such failure means the file could not be
  * scrubbed with confidence, so it is refused.
  */
-async function scrubPdf(bytes: Uint8Array): Promise<ScrubResult> {
+async function scrubPdf(bytes: Uint8Array, label: string): Promise<ScrubResult> {
   try {
-    return await scrubPdfStrict(bytes);
+    return await scrubPdfStrict(bytes, label);
   } catch {
     return { ok: false, reason: "unreadable" };
   }
@@ -240,13 +242,20 @@ async function scrubPdf(bytes: Uint8Array): Promise<ScrubResult> {
 // ── Entry point ────────────────────────────────────────────────────────────
 
 /**
- * Scrubs a reviewer's file. Plain text has no metadata and passes through.
- * Fails closed: a file that cannot be parsed is rejected, never passed on
- * unscrubbed.
+ * Scrubs a file of the names in its metadata. Plain text has no metadata and
+ * passes through. Fails closed: a file that cannot be parsed is rejected,
+ * never passed on unscrubbed.
+ *
+ * `label` is what every removed name becomes: "Reviewer" on a reviewer's
+ * marked-up copy, "Author" on a paper sent for double-blind review.
  */
-export async function scrubDocument(kind: ScrubbableKind, bytes: Uint8Array): Promise<ScrubResult> {
-  if (kind === "docx") return scrubDocx(bytes);
-  if (kind === "pdf") return scrubPdf(bytes);
+export async function scrubDocument(
+  kind: ScrubbableKind,
+  bytes: Uint8Array,
+  label: string = ANONYMOUS_AUTHOR,
+): Promise<ScrubResult> {
+  if (kind === "docx") return scrubDocx(bytes, label);
+  if (kind === "pdf") return scrubPdf(bytes, label);
   return { ok: true, bytes, removed: [] };
 }
 

@@ -9,9 +9,9 @@ describe("HomePage", () => {
     render(<HomePage />);
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-      "Have your writing read properly before it counts.",
+      "Peer review for academic conferences.",
     );
-    expect(screen.getByText("We match a reviewer")).toBeInTheDocument();
+    expect(screen.getByText("Reviewers are matched")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Sign in" })[0]).toHaveAttribute("href", "/login");
     expect(screen.getAllByRole("link", { name: /Get started/ })[0]).toHaveAttribute(
       "href",

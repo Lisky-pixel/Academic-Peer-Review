@@ -76,8 +76,21 @@ class ResendProvider implements EmailProvider {
 
 let provider: EmailProvider | undefined;
 
+/**
+ * Addresses under ".invalid" are reserved (RFC 2606) and can never receive
+ * mail. The demo accounts use them, so a demonstration on the live site
+ * never bounces against the sending domain. Development mail goes to Mailpit,
+ * which accepts anything, so the tests still see their messages there.
+ */
+export function isUndeliverable(address: string): boolean {
+  return /\.invalid$/i.test(address.trim());
+}
+
 /** Hands a message to the provider. Throws if the provider refuses it. */
 export function deliver(message: EmailMessage): Promise<string | undefined> {
+  if (env.EMAIL_PROVIDER === "resend" && isUndeliverable(message.to)) {
+    return Promise.resolve("skipped-reserved-address");
+  }
   provider ??= env.EMAIL_PROVIDER === "resend" ? new ResendProvider() : new SmtpProvider();
   return provider.send(message);
 }

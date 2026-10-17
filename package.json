@@ -25,6 +25,7 @@
     "docker:down": "docker compose down",
     "docker:reset": "docker compose down -v",
     "db:seed:reference": "tsx --env-file-if-exists=.env.local prisma/seed.ts --reference-only",
+    "db:seed:demo": "tsx --env-file-if-exists=.env.local prisma/seed.ts --demo",
     "admin:create": "tsx --env-file-if-exists=.env.local scripts/create-admin.ts",
     "postinstall": "prisma generate"
   },

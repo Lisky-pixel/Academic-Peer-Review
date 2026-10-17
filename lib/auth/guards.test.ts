@@ -68,7 +68,7 @@ describe("getCurrentSession", () => {
 
     await getCurrentSession();
 
-    expect(mocks.cookieGet).toHaveBeenCalledWith("reviewflow_session");
+    expect(mocks.cookieGet).toHaveBeenCalledWith("apr_session");
     expect(mocks.validateSessionToken).toHaveBeenCalledWith("raw-token");
   });
 

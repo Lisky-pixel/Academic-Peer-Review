@@ -18,7 +18,7 @@ export function AnnotatedPageVisual({ className }: { className?: string }) {
   return (
     <div
       role="img"
-      aria-label="A page of a personal statement with a highlighted sentence, a suggested edit and a note from an anonymous reviewer."
+      aria-label="A page of a conference paper with a highlighted sentence, a suggested edit and a note from an anonymous reviewer."
       className={cn("relative mx-auto w-full max-w-md", className)}
     >
       {/* A second sheet behind, for depth. */}
@@ -34,7 +34,7 @@ export function AnnotatedPageVisual({ className }: { className?: string }) {
         <div className="flex items-center justify-between gap-3">
           <span className="text-muted-foreground flex items-center gap-2 text-xs font-medium">
             <FileText className="size-3.5" />
-            Personal Statement
+            APR-2026-0147 · Public Health
           </span>
           <span className="bg-mark/10 text-mark rounded-full px-2.5 py-1 text-[11px] font-semibold">
             In review
@@ -43,21 +43,19 @@ export function AnnotatedPageVisual({ className }: { className?: string }) {
 
         <div className="font-heading text-foreground/90 mt-5 space-y-3 text-[15px] leading-relaxed">
           <p>
-            I have always been{" "}
-            <span className="text-muted-foreground line-through decoration-1">
-              passionate about
-            </span>{" "}
-            <span className="text-mark">drawn to</span> the way a city moves.
+            Women who attended four or more antenatal visits had{" "}
+            <span className="text-muted-foreground line-through decoration-1">much</span>{" "}
+            <span className="text-mark">significantly</span> lower odds of low birth weight.
           </p>
           <p>
             <mark className="bg-mark/15 text-foreground rounded-sm px-0.5">
-              At sixteen I spent a summer counting buses at Ojuelegba junction.
+              Late first attendance, after twenty weeks, remained common.
             </mark>{" "}
-            What began as a school project became the reason I want to study transport planning.
+            It was strongly associated with distance to the nearest facility.
           </p>
           <p className="text-muted-foreground">
-            That count taught me that a timetable is a promise, and that most people plan their
-            lives around promises nobody intends to keep.
+            We discuss practical steps for community outreach that could move first visits earlier
+            in pregnancy.
           </p>
         </div>
       </div>
@@ -72,7 +70,7 @@ export function AnnotatedPageVisual({ className }: { className?: string }) {
           Reviewer · Anonymous
         </p>
         <p className="mt-2 text-sm leading-snug">
-          This is your opening. Start here, and cut the sentence before it.
+          Your strongest finding. Say how distance was measured.
         </p>
       </div>
     </div>
@@ -80,10 +78,8 @@ export function AnnotatedPageVisual({ className }: { className?: string }) {
 }
 
 const RATINGS = [
-  { label: "Clarity", score: 4 },
-  { label: "Structure", score: 3 },
-  { label: "Storytelling", score: 5 },
-  { label: "Opening", score: 4 },
+  { label: "Reviewer 1", score: 5 },
+  { label: "Reviewer 2", score: 4 },
 ];
 
 /** The review a user gets back: criteria, a summary, and the marked-up file. */
@@ -91,7 +87,7 @@ export function ReviewSummaryVisual({ className }: { className?: string }) {
   return (
     <div
       role="img"
-      aria-label="A completed review showing scores for clarity, structure, storytelling and opening, a written summary, and the annotated file ready to download."
+      aria-label="An accepted paper showing two anonymous reviewers' scores, their comments, and a marked-up copy ready to download."
       className={cn("mx-auto w-full max-w-md", className)}
     >
       <div
@@ -99,9 +95,9 @@ export function ReviewSummaryVisual({ className }: { className?: string }) {
         className="border-border bg-card rounded-2xl border p-6 shadow-xl shadow-black/5 sm:p-8 dark:shadow-black/40"
       >
         <div className="flex items-center justify-between gap-3">
-          <p className="font-heading text-lg font-medium">Your review</p>
+          <p className="font-heading text-lg font-medium">Your reviews</p>
           <span className="bg-success/10 text-success rounded-full px-2.5 py-1 text-[11px] font-semibold">
-            Approved
+            Accepted
           </span>
         </div>
 
@@ -125,14 +121,14 @@ export function ReviewSummaryVisual({ className }: { className?: string }) {
         </dl>
 
         <p className="border-border text-muted-foreground mt-6 border-t pt-5 text-sm leading-relaxed">
-          A strong, specific story. The middle section repeats itself; merge the second and third
-          paragraphs and the ending will land.
+          A clear and well-designed cohort study. Consider a sensitivity analysis excluding women
+          who moved during pregnancy.
         </p>
 
         <div className="bg-muted mt-5 flex items-center justify-between gap-3 rounded-xl px-4 py-3">
           <span className="flex min-w-0 items-center gap-2.5 text-sm">
             <FileText className="text-muted-foreground size-4 shrink-0" />
-            <span className="truncate font-medium">RF-2026-0147-reviewed.docx</span>
+            <span className="truncate font-medium">APR-2026-0147-reviewed.pdf</span>
           </span>
           <Download className="text-mark size-4 shrink-0" />
         </div>

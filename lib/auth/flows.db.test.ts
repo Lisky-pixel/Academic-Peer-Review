@@ -135,7 +135,13 @@ describe.skipIf(!dbAvailable)("authenticate", () => {
 
 describe.skipIf(!dbAvailable)("registration", () => {
   async function register(email = testEmail("new"), password = PASSWORD) {
-    await startRegistration({ name: "  New Person ", email, password });
+    await startRegistration({
+      accountType: "submitter",
+      institution: "Test University",
+      name: "  New Person ",
+      email,
+      password,
+    });
     return email.toLowerCase();
   }
 
@@ -151,8 +157,15 @@ describe.skipIf(!dbAvailable)("registration", () => {
     expect(await findPendingRegistration(tokenFromLastEmail())).toMatchObject({ email });
   });
 
-  it("can only ever create a USER — a smuggled role is ignored", async () => {
-    const input = { name: "Sneaky", email: testEmail(), password: PASSWORD, role: "ADMIN" };
+  it("creates a submitter, and a smuggled role is ignored", async () => {
+    const input = {
+      accountType: "submitter" as const,
+      institution: "Test University",
+      name: "Sneaky",
+      email: testEmail(),
+      password: PASSWORD,
+      role: "ADMIN",
+    };
 
     await startRegistration(input);
 
@@ -255,6 +268,8 @@ describe.skipIf(!dbAvailable)("registration", () => {
 
     await expect(
       startRegistration({
+        accountType: "submitter",
+        institution: "Test University",
         name: "Someone Else",
         email: existing.email.toUpperCase(),
         password: NEW_PASSWORD,
@@ -276,7 +291,13 @@ describe.skipIf(!dbAvailable)("registration", () => {
   it("sends a suspended account nothing and changes nothing", async () => {
     const suspended = await createUser({ status: "SUSPENDED" });
 
-    await startRegistration({ name: "Back Again", email: suspended.email, password: PASSWORD });
+    await startRegistration({
+      accountType: "submitter",
+      institution: "Test University",
+      name: "Back Again",
+      email: suspended.email,
+      password: PASSWORD,
+    });
 
     expect(sendEmail).not.toHaveBeenCalled();
     const unchanged = await db.user.findUniqueOrThrow({ where: { id: suspended.id } });
@@ -394,7 +415,13 @@ describe.skipIf(!dbAvailable)("invite management", () => {
   it("converts a half-finished self-registration into the invitation", async () => {
     const admin = await createUser({ role: "ADMIN" });
     const email = testEmail("halfway");
-    await startRegistration({ name: "Half Way", email, password: PASSWORD });
+    await startRegistration({
+      accountType: "submitter",
+      institution: "Test University",
+      name: "Half Way",
+      email,
+      password: PASSWORD,
+    });
     const verifyLink = tokenFromLastEmail();
 
     const result = await createInvite({
