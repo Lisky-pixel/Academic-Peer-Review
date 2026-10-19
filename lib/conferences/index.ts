@@ -52,6 +52,8 @@ const LIST_SELECT = {
   packageName: true,
   submissionLimit: true,
   matchedAt: true,
+  status: true,
+  declineReason: true,
   organisers: { select: { user: { select: { id: true, name: true, email: true } } } },
   _count: { select: { submissions: { where: { status: { notIn: ["DRAFT", "WITHDRAWN"] } } } } },
 } satisfies Prisma.ConferenceSelect;
@@ -101,7 +103,7 @@ export function findConference(conferenceId: string): Promise<ConferenceDetailRe
 
 // ── Creating and editing (administrators) ──────────────────────────────────
 
-async function uniqueSlug(tx: Prisma.TransactionClient, name: string, ignoreId?: string) {
+export async function uniqueSlug(tx: Prisma.TransactionClient, name: string, ignoreId?: string) {
   const base = slugify(name);
   for (let attempt = 0; attempt < 50; attempt++) {
     const slug = attempt === 0 ? base : `${base}-${attempt + 1}`;
@@ -245,6 +247,8 @@ export async function recordPayment(
   admin: SessionUser,
   conferenceId: string,
   input: PaymentInput,
+  /** The invoice this payment settles, which is then marked paid. */
+  invoiceId?: string,
 ): Promise<{ ok: true; receiptNumber: string } | { ok: false; reason: "not_found" }> {
   const result = await db.$transaction(async (tx) => {
     const conference = await tx.conference.findUnique({
@@ -266,9 +270,16 @@ export async function recordPayment(
         recordedById: admin.id,
         receiptNumber,
         receiptSentAt: now,
+        invoiceId: invoiceId ?? null,
       },
       select: { id: true },
     });
+    if (invoiceId) {
+      await tx.invoice.update({
+        where: { id: invoiceId },
+        data: { status: "PAID", paidAt: input.paidAt },
+      });
+    }
 
     const message = toOrganiser.paymentReceipt({
       conferenceId,

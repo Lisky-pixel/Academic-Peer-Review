@@ -340,3 +340,33 @@
     clip-path: circle(var(--vt-r, 150vmax) at var(--vt-x, 50%) var(--vt-y, 0));
   }
 }
+
+/*
+ * Printing (and "Save as PDF"): a plain white page. The site header, the
+ * backdrop and the development badge are dropped, frosted surfaces become
+ * plain paper, and the light theme is forced so text is dark whatever theme
+ * the person was using. Used for invoices.
+ */
+@media print {
+  html,
+  html.dark {
+    color-scheme: light !important;
+  }
+  body {
+    background: #fff !important;
+  }
+  .app-backdrop,
+  body > div > header,
+  nextjs-portal {
+    display: none !important;
+  }
+  .glass {
+    background: #fff !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+  main {
+    padding-top: 0 !important;
+  }
+}

@@ -2,7 +2,7 @@
 
 import { Receipt, UserPlus } from "lucide-react";
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import {
   addOrganiserAction,
   inviteOrganiserAction,
@@ -21,7 +21,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import type { FormState } from "@/lib/auth/schemas";
-import { CURRENCIES } from "@/lib/conferences/schema";
+import { CURRENCY, packageFor, packageLimitLabel } from "@/lib/billing/pricing";
+import { CURRENCIES, formatMoney } from "@/lib/conferences/schema";
 
 const INITIAL: FormState = {};
 
@@ -43,16 +44,27 @@ export type ConferenceFormValues = {
   submissionLimit: string;
 };
 
-/** Creates a conference, or, with `conferenceId`, changes its settings. */
+/**
+ * A conference's details. An administrator creates one, or with
+ * `conferenceId` changes its settings; with `request`, an organiser asks for
+ * one, choosing how many papers they expect instead of a package.
+ */
 export function ConferenceForm({
   conferenceId,
   initial,
+  request,
 }: {
   conferenceId?: string;
   initial: ConferenceFormValues;
+  request?: {
+    action: (state: FormState, formData: FormData) => Promise<FormState>;
+    cancelHref: string;
+  };
 }) {
-  const [state, action, pending] = useActionState(saveConferenceAction, INITIAL);
+  const [state, action, pending] = useActionState(request?.action ?? saveConferenceAction, INITIAL);
   const value = (name: keyof ConferenceFormValues) => state.values?.[name] ?? initial[name];
+  const [expected, setExpected] = useState(state.values?.expectedPapers ?? "");
+  const chosen = Number(expected) > 0 ? packageFor(Number(expected)) : null;
 
   return (
     <form action={action} className="space-y-10">
@@ -189,36 +201,77 @@ export function ConferenceForm({
         />
       </fieldset>
 
-      <fieldset className="min-w-0 space-y-5">
-        <legend className="font-heading mb-1 text-xl font-medium">Package</legend>
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-2">
+      {request ? (
+        <fieldset className="min-w-0 space-y-5">
+          <legend className="font-heading mb-1 text-xl font-medium">Size and price</legend>
           <Field
-            name="packageName"
-            label="Package (optional)"
-            required={false}
-            state={state}
-            defaultValue={value("packageName")}
-            placeholder="e.g. Standard"
-          />
-          <Field
-            name="submissionLimit"
-            label="Paper limit (optional)"
+            name="expectedPapers"
+            label="How many papers do you expect?"
             type="number"
             min={1}
-            required={false}
+            inputMode="numeric"
             state={state}
-            defaultValue={value("submissionLimit")}
-            hint="The most papers this conference may receive. Empty means no limit."
+            defaultValue={expected}
+            onChange={(event) => setExpected(event.target.value)}
+            hint="A rough estimate is fine. It sets your package and the most papers you can receive."
           />
-        </div>
-      </fieldset>
+          {chosen && (
+            <div
+              role="status"
+              className="border-mark/30 bg-mark/5 flex flex-wrap items-baseline justify-between gap-3 rounded-xl border p-4 text-sm"
+            >
+              <span>
+                <span className="font-medium">{chosen.name} package</span>{" "}
+                <span className="text-muted-foreground">· {packageLimitLabel(chosen)}</span>
+              </span>
+              <span className="font-heading text-xl font-medium tabular-nums">
+                {formatMoney(chosen.priceMinor, CURRENCY)}
+              </span>
+            </div>
+          )}
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            When you send this request we email you an invoice. Once it is paid, we approve your
+            conference and your call for papers opens.
+          </p>
+        </fieldset>
+      ) : (
+        <fieldset className="min-w-0 space-y-5">
+          <legend className="font-heading mb-1 text-xl font-medium">Package</legend>
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-2">
+            <Field
+              name="packageName"
+              label="Package (optional)"
+              required={false}
+              state={state}
+              defaultValue={value("packageName")}
+              placeholder="e.g. Standard"
+            />
+            <Field
+              name="submissionLimit"
+              label="Paper limit (optional)"
+              type="number"
+              min={1}
+              required={false}
+              state={state}
+              defaultValue={value("submissionLimit")}
+              hint="The most papers this conference may receive. Empty means no limit."
+            />
+          </div>
+        </fieldset>
+      )}
 
       <div className="border-border flex flex-wrap items-center gap-3 border-t pt-8">
         <Button type="submit" size="lg" className="h-10 px-4 text-sm" disabled={pending}>
-          {pending ? "Saving…" : conferenceId ? "Save settings" : "Create conference"}
+          {pending
+            ? "Saving…"
+            : request
+              ? "Send request"
+              : conferenceId
+                ? "Save settings"
+                : "Create conference"}
         </Button>
         <Button asChild variant="ghost" size="lg" className="h-10 px-4 text-sm">
-          <Link href="/admin">Cancel</Link>
+          <Link href={request?.cancelHref ?? "/admin"}>Cancel</Link>
         </Button>
       </div>
     </form>

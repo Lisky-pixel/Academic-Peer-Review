@@ -71,6 +71,10 @@ const ACTION_LABEL: Record<string, string> = {
   "conference.organiser_removed": "Organiser removed",
   "conference.payment_recorded": "Payment recorded",
   "conference.matching_run": "Reviewers matched",
+  "conference.requested": "Conference requested",
+  "conference.approved": "Conference approved",
+  "conference.declined": "Conference request declined",
+  "billing.instructions_updated": "Payment instructions changed",
   "auth.login": "Signed in",
   "auth.registered": "Account confirmed",
   "auth.password_reset": "Password reset by email",
@@ -111,6 +115,7 @@ export function toActivityEntryDTO(record: ActivityLogRecord): ActivityEntryDTO 
   if (typeof metadata.reason === "string") detail = metadata.reason;
   else if (typeof metadata.note === "string") detail = metadata.note;
   else if (typeof metadata.receiptNumber === "string") detail = `Receipt ${metadata.receiptNumber}`;
+  else if (typeof metadata.invoice === "string") detail = `Invoice ${metadata.invoice}`;
   else if (typeof metadata.assigned === "number") {
     detail = `${metadata.assigned} reviewer places filled across ${metadata.papers} papers`;
   } else if (metadata.tiebreaker === true) detail = "Added as a tie-breaker";

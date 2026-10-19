@@ -17,7 +17,7 @@ export default async function RegisterPage({ searchParams }: PageProps<"/registe
   return (
     <AuthCard
       title="Create an account"
-      description="Submit papers to conferences, or review papers in your discipline."
+      description="Submit papers, review in your discipline, or run a conference's peer review."
       footer={
         <>
           Already have an account?{" "}
@@ -29,7 +29,7 @@ export default async function RegisterPage({ searchParams }: PageProps<"/registe
     >
       <RegisterForm
         disciplines={disciplines}
-        initialType={as === "reviewer" || as === "submitter" ? as : ""}
+        initialType={as === "reviewer" || as === "submitter" || as === "organiser" ? as : ""}
       />
     </AuthCard>
   );

@@ -155,6 +155,7 @@ export async function escalateOverdueReviews(
 export async function matchClosedConferences(now: Date = new Date()): Promise<number> {
   const due = await db.conference.findMany({
     where: {
+      status: "ACTIVE",
       submissionsCloseAt: { lte: now },
       OR: [{ matchedAt: null }, { matchedAt: { lt: db.conference.fields.submissionsCloseAt } }],
     },

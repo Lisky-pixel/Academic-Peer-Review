@@ -88,7 +88,10 @@ const institution = z
 
 export const registerSchema = z
   .object({
-    accountType: z.enum(["submitter", "reviewer"], "Choose how you will use the platform."),
+    accountType: z.enum(
+      ["submitter", "reviewer", "organiser"],
+      "Choose how you will use the platform.",
+    ),
     name: z.string().trim().min(2, "Enter your name.").max(100),
     email,
     institution,

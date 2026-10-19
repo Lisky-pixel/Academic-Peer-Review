@@ -90,9 +90,15 @@ export function RegisterForm({
         state={state}
         initial={accountType}
         onChange={setAccountType}
+        columns={1}
         options={[
           { value: "submitter", label: "Submit papers", detail: "To conferences on the platform." },
           { value: "reviewer", label: "Review papers", detail: "In my discipline, anonymously." },
+          {
+            value: "organiser",
+            label: "Organise a conference",
+            detail: "Run a call for papers and its peer review.",
+          },
         ]}
       />
       <Field name="name" label="Full name" autoComplete="name" state={state} />

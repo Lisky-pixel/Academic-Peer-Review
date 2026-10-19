@@ -2,7 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { renderNotificationEmail } from "@/lib/email/template";
-import { type Message, toOrganiser, toReviewer, toSubmitter } from "@/lib/notifications/messages";
+import {
+  type Message,
+  toAdministrators,
+  toOrganiser,
+  toRequester,
+  toReviewer,
+  toSubmitter,
+} from "@/lib/notifications/messages";
 
 export const metadata: Metadata = { title: "Email previews" };
 
@@ -36,6 +43,51 @@ const GROUPS: Array<{ audience: string; messages: Array<[string, Message]> }> = 
       ["Review no longer needed", toReviewer.assignmentCancelled(SAMPLE)],
       ["Reminder: 7 days", toReviewer.deadlineApproaching(SAMPLE, "14 Dec 2026", 7)],
       ["Reminder: 1 day", toReviewer.deadlineApproaching(SAMPLE, "14 Dec 2026", 1)],
+    ],
+  },
+  {
+    audience: "Conference requests",
+    messages: [
+      [
+        "Invoice",
+        toRequester.invoiceIssued({
+          invoiceId: "00000000-0000-7000-8000-0000000000aa",
+          number: "APR-INV-2026-0001",
+          conferenceId: SAMPLE.conferenceId,
+          conferenceName: CONFERENCE,
+          packageName: "Starter (up to 50 papers)",
+          amount: "USD 10.00",
+          dueOn: "2 Nov 2026",
+          paymentInstructions:
+            "Bank: Example Bank\nAccount name: Academic Peer Review Ltd\nAccount number: 0123456789\n\nOr pay by mobile money to 0800 000 0000.",
+        }),
+      ],
+      [
+        "Approved",
+        toRequester.approved({
+          conferenceId: SAMPLE.conferenceId,
+          conferenceName: CONFERENCE,
+          opensOn: "20 Oct 2026",
+        }),
+      ],
+      [
+        "Declined",
+        toRequester.declined({
+          conferenceId: SAMPLE.conferenceId,
+          conferenceName: CONFERENCE,
+          reason: "We could not confirm the payment.",
+        }),
+      ],
+      [
+        "New request (to admins)",
+        toAdministrators.conferenceRequested({
+          conferenceId: SAMPLE.conferenceId,
+          conferenceName: CONFERENCE,
+          organiserName: "Olu Organiser",
+          amount: "USD 10.00",
+          invoiceNumber: "APR-INV-2026-0001",
+        }),
+      ],
     ],
   },
   {

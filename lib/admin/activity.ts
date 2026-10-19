@@ -14,7 +14,7 @@ export const ACTIVITY_CATEGORIES = {
     label: "Papers and reviews",
     prefixes: ["submission.", "assignment.", "review."],
   },
-  conference: { label: "Conferences", prefix: "conference." },
+  conference: { label: "Conferences and billing", prefixes: ["conference.", "billing."] },
   auth: { label: "Sign-ins and accounts", prefix: "auth." },
   user: { label: "People", prefix: "user." },
 } as const;

@@ -209,3 +209,89 @@ export const toOrganiser = {
       cta: "Open the conference",
     }),
 };
+
+// ── Conference requests ────────────────────────────────────────────────────
+
+export type InvoiceFacts = {
+  invoiceId: string;
+  number: string;
+  conferenceId: string;
+  conferenceName: string;
+  packageName: string;
+  amount: string;
+  dueOn: string;
+  /** What the administrator has written about how to pay; may be several paragraphs. */
+  paymentInstructions: string;
+};
+
+export const toRequester = {
+  invoiceIssued: (invoice: InvoiceFacts) =>
+    message("CONFERENCE_REQUESTED", {
+      title: `Invoice ${invoice.number}`,
+      body: `${invoice.amount} for ${invoice.conferenceName}, due by ${invoice.dueOn}.`,
+      linkPath: `/organiser/invoices/${invoice.invoiceId}`,
+      subject: `Invoice ${invoice.number} for ${invoice.conferenceName}`,
+      paragraphs: [
+        `Thank you for requesting ${invoice.conferenceName}. Here is your invoice.`,
+        `Invoice number: ${invoice.number}`,
+        `Package: ${invoice.packageName}`,
+        `Amount due: ${invoice.amount}`,
+        `Due by: ${invoice.dueOn}`,
+        "How to pay:",
+        ...invoice.paymentInstructions
+          .split(/\n\s*\n/)
+          .map((paragraph) => paragraph.trim())
+          .filter(Boolean),
+        `Please quote ${invoice.number} as your payment reference. Once your payment is confirmed we will approve the conference, email you a receipt, and your call for papers will open.`,
+      ],
+      cta: "View the invoice",
+    }),
+
+  approved: (input: { conferenceId: string; conferenceName: string; opensOn: string }) =>
+    message("CONFERENCE_DECIDED", {
+      title: "Your conference is approved",
+      body: `${input.conferenceName} is approved. The call for papers opens on ${input.opensOn}.`,
+      linkPath: `/organiser/conferences/${input.conferenceId}`,
+      subject: `Approved: ${input.conferenceName}`,
+      paragraphs: [
+        `Good news: ${input.conferenceName} has been approved.`,
+        `Its call for papers opens on ${input.opensOn}. From then, authors can submit, and you can follow every paper from your conference page.`,
+      ],
+      cta: "Open your conference",
+    }),
+
+  declined: (input: { conferenceId: string; conferenceName: string; reason: string }) =>
+    message("CONFERENCE_DECIDED", {
+      title: "Your conference request was not approved",
+      body: `${input.conferenceName} was not approved.`,
+      linkPath: "/organiser",
+      subject: `Not approved: ${input.conferenceName}`,
+      paragraphs: [
+        `We are sorry: ${input.conferenceName} has not been approved.`,
+        `The reason given: ${input.reason}`,
+        "If you have questions, reply through the help page and we will get back to you.",
+      ],
+      cta: "Open your conferences",
+    }),
+};
+
+export const toAdministrators = {
+  conferenceRequested: (input: {
+    conferenceId: string;
+    conferenceName: string;
+    organiserName: string;
+    amount: string;
+    invoiceNumber: string;
+  }) =>
+    message("CONFERENCE_REQUESTED", {
+      title: "New conference request",
+      body: `${input.organiserName} requested ${input.conferenceName}.`,
+      linkPath: `/admin/conferences/${input.conferenceId}`,
+      subject: `New conference request: ${input.conferenceName}`,
+      paragraphs: [
+        `${input.organiserName} has requested ${input.conferenceName}.`,
+        `Invoice ${input.invoiceNumber} for ${input.amount} has been sent to them. When they have paid, mark the invoice paid and approve the conference.`,
+      ],
+      cta: "Review the request",
+    }),
+};

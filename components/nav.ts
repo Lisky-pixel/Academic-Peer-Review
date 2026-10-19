@@ -22,6 +22,7 @@ const NAV = {
     { href: "/admin", label: "Conferences" },
     { href: "/admin/users", label: "People" },
     { href: "/admin/invites", label: "Invitations" },
+    { href: "/admin/billing", label: "Billing" },
     { href: "/admin/email", label: "Email" },
     { href: "/admin/activity", label: "Activity" },
   ],

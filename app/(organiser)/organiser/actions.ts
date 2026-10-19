@@ -1,12 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth/guards";
 import { getRequestMetadata } from "@/lib/auth/request";
 import { createInvite, resendInvite } from "@/lib/auth/invites";
 import { type FormState, inviteSchema, zodFieldErrors } from "@/lib/auth/schemas";
+import { requestConference } from "@/lib/billing";
 import { assignManually, decide, removeReviewer } from "@/lib/conferences";
 import { requireOrganiserOf } from "@/lib/conferences/guard";
+import { conferenceSchema } from "@/lib/conferences/schema";
 import { isUuid } from "@/lib/format";
 import { runMatching } from "@/lib/matching";
 
@@ -135,4 +138,54 @@ export async function resendReviewerInviteAction(formData: FormData): Promise<vo
   const user = await requireRole("ORGANISER", "ADMIN");
   await resendInvite(String(formData.get("userId") ?? ""), user);
   revalidatePath("/organiser/reviewers");
+}
+
+// ── Requesting a conference ────────────────────────────────────────────────
+
+const CONFERENCE_FIELDS = [
+  "name",
+  "description",
+  "venue",
+  "startsOn",
+  "endsOn",
+  "submissionsOpenAt",
+  "submissionsCloseAt",
+  "reviewDeadline",
+  "reviewersPerPaper",
+  "maxPapersPerReviewer",
+  "doubleBlind",
+  "submissionFormat",
+  "topics",
+  "expectedPapers",
+] as const;
+
+export async function requestConferenceAction(
+  _state: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const user = await requireRole("ORGANISER");
+
+  const values: Record<string, string> = Object.fromEntries(
+    CONFERENCE_FIELDS.map((name) => [name, String(formData.get(name) ?? "")]),
+  );
+  // The package and its limit come from the expected papers, not the form.
+  const parsed = conferenceSchema.safeParse({ ...values, packageName: "", submissionLimit: "" });
+  const expected = Number(values.expectedPapers);
+  const expectedValid = Number.isInteger(expected) && expected >= 1 && expected <= 100_000;
+
+  if (!parsed.success || !expectedValid) {
+    return {
+      fieldErrors: {
+        ...(parsed.success ? {} : zodFieldErrors(parsed.error)),
+        ...(expectedValid
+          ? {}
+          : { expectedPapers: ["Enter roughly how many papers you expect, for example 40."] }),
+      },
+      values,
+    };
+  }
+
+  const { invoiceId } = await requestConference(user, parsed.data, expected);
+  revalidatePath("/organiser");
+  redirect(`/organiser/invoices/${invoiceId}?requested=1`);
 }

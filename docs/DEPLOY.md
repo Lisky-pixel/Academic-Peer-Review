@@ -147,6 +147,16 @@ your shell.
 
 _Worked if:_ you can sign in at your domain and see the Submissions page.
 
+## 6a. Payment instructions
+
+Sign in as the administrator, open **Billing**, and write how organisers
+should pay you (bank name, account name and number, or a mobile money
+number). This text goes on every invoice and in the invoice email. Until you
+set it, invoices say your team will contact them with bank details.
+
+Prices are set in `lib/billing/pricing.ts`; they are currently demonstration
+prices starting at USD 10.
+
 ## 6b. Demo data (optional)
 
 To show the platform with papers at every stage, load the demo conferences,

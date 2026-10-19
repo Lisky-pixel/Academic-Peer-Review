@@ -20,6 +20,7 @@ import { RoleArea } from "@/components/role-area";
 import { StatTiles } from "@/components/stat-tiles";
 import { StatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
+import { findConferenceInvoices } from "@/lib/billing";
 import { findConference, findConferencePapers, type PaperFilter } from "@/lib/conferences";
 import { requireOrganiserOf } from "@/lib/conferences/guard";
 import { findConferenceReport } from "@/lib/conferences/reports";
@@ -66,6 +67,71 @@ export default async function ConferencePage({
   const record = await findConference(id);
   if (!record) notFound();
   const conference = toConferenceDetailDTO(record);
+
+  if (conference.status !== "ACTIVE") {
+    const invoices = await findConferenceInvoices(id);
+    return (
+      <RoleArea
+        user={user}
+        title={conference.name}
+        eyebrow={
+          <BackLink href={user.role === "ADMIN" ? "/admin" : "/organiser"}>Conferences</BackLink>
+        }
+      >
+        <section className="glass space-y-3 rounded-3xl p-6 sm:p-8">
+          <StatusPill tone={conference.status === "PENDING" ? "warning" : "muted"}>
+            {conference.status === "PENDING" ? "Waiting for approval" : "Not approved"}
+          </StatusPill>
+          {conference.status === "PENDING" ? (
+            <p className="leading-relaxed">
+              Your request has been received. Once your invoice is paid, we approve the conference
+              and the call for papers opens on {formatDate(conference.opensAt)}.
+            </p>
+          ) : (
+            <p className="leading-relaxed">
+              This request was not approved
+              {conference.declineReason ? `: ${conference.declineReason}` : "."}
+            </p>
+          )}
+        </section>
+        {invoices.length > 0 && (
+          <section className="space-y-3">
+            <h2 className="font-heading text-xl font-medium">Invoices</h2>
+            <ul className="glass divide-border divide-y overflow-hidden rounded-2xl">
+              {invoices.map((invoice) => (
+                <li key={invoice.id}>
+                  <Link
+                    href={`/organiser/invoices/${invoice.id}`}
+                    className="hover:bg-muted/60 flex flex-wrap items-center justify-between gap-3 px-5 py-4 text-sm transition-colors"
+                  >
+                    <span>
+                      <span className="font-mono">{invoice.number}</span>{" "}
+                      <span className="text-muted-foreground">· {invoice.amount}</span>
+                    </span>
+                    <StatusPill
+                      tone={
+                        invoice.status === "PAID"
+                          ? "success"
+                          : invoice.status === "UNPAID"
+                            ? "warning"
+                            : "muted"
+                      }
+                    >
+                      {invoice.status === "PAID"
+                        ? "Paid"
+                        : invoice.status === "UNPAID"
+                          ? "Unpaid"
+                          : "Cancelled"}
+                    </StatusPill>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </RoleArea>
+    );
+  }
 
   const [allPapers, papers, report] = await Promise.all([
     findConferencePapers(id),

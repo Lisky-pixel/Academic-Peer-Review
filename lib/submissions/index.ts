@@ -60,9 +60,11 @@ export function formatReference(year: number, sequence: number): string {
 // ── Conferences open for papers ────────────────────────────────────────────
 
 export function isOpenForPapers(
-  conference: { submissionsOpenAt: Date; submissionsCloseAt: Date },
+  conference: { submissionsOpenAt: Date; submissionsCloseAt: Date; status?: string },
   now: Date = new Date(),
 ): boolean {
+  // A conference still waiting for approval, or declined, never takes papers.
+  if (conference.status !== undefined && conference.status !== "ACTIVE") return false;
   return conference.submissionsOpenAt <= now && now < conference.submissionsCloseAt;
 }
 
@@ -78,6 +80,7 @@ const OPEN_CONFERENCE_SELECT = {
   submissionFormat: true,
   topics: true,
   doubleBlind: true,
+  status: true,
 } satisfies Prisma.ConferenceSelect;
 
 export type OpenConferenceRecord = Prisma.ConferenceGetPayload<{
@@ -86,7 +89,7 @@ export type OpenConferenceRecord = Prisma.ConferenceGetPayload<{
 
 export function findOpenConferences(now: Date = new Date()): Promise<OpenConferenceRecord[]> {
   return db.conference.findMany({
-    where: { submissionsOpenAt: { lte: now }, submissionsCloseAt: { gt: now } },
+    where: { status: "ACTIVE", submissionsOpenAt: { lte: now }, submissionsCloseAt: { gt: now } },
     orderBy: { submissionsCloseAt: "asc" },
     select: OPEN_CONFERENCE_SELECT,
   });
@@ -257,7 +260,7 @@ export async function createDraft(
 ): Promise<{ ok: true; id: string } | { ok: false; reason: DetailsFailure }> {
   const conference = await db.conference.findUnique({
     where: { id: conferenceId },
-    select: { topics: true, submissionsOpenAt: true, submissionsCloseAt: true },
+    select: { topics: true, submissionsOpenAt: true, submissionsCloseAt: true, status: true },
   });
   if (!conference || !isOpenForPapers(conference)) {
     return { ok: false, reason: "conference_closed" };
@@ -464,6 +467,7 @@ export async function submitPaper(
           submissionLimit: true,
           submissionsOpenAt: true,
           submissionsCloseAt: true,
+          status: true,
         },
       },
       _count: { select: { files: { where: { kind: "ORIGINAL" } } } },

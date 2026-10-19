@@ -26,7 +26,8 @@ suite. Nothing is deployed yet; `docs/DEPLOY.md` has the steps. No email has
 ever been sent through Resend.
 
 Not built yet, agreed for after the first demo: online payment for organiser
-packages (payments are recorded by an administrator, which emails a receipt),
+packages (invoices are paid outside the platform and marked paid by an
+administrator, which emails a receipt),
 a browser test of the full flow, and admin management of the disciplines list
 (it is seeded).
 
@@ -37,9 +38,10 @@ a browser test of the full flow, and admin management of the disciplines list
   (`ConferenceOrganiser`); `ADMIN` runs the platform and acts as organiser of
   any conference. Homes: `/dashboard`, `/reviewer`, `/organiser`, `/admin`
   (`HOME_PATH`). A new area must also go in `proxy.ts`'s protected list.
-- **Signup** (`lib/auth/registration.ts`) chooses submitter or reviewer. A
-  reviewer gives rank, years, expertise and disciplines (`ReviewerProfile`).
-  Organisers and administrators exist only by invitation. A submitter becomes
+- **Signup** (`lib/auth/registration.ts`) chooses submitter, reviewer or
+  organiser. A reviewer gives rank, years, expertise and disciplines
+  (`ReviewerProfile`). Administrators exist only by invitation; organisers can
+  also be invited. A submitter becomes
   a reviewer from their profile. `/register` must still answer the same way
   whether or not the address is taken.
 - **Conferences** (`lib/conferences`): created by administrators at
@@ -49,6 +51,19 @@ a browser test of the full flow, and admin management of the disciplines list
   Organiser pages are `/organiser/conferences/[id]` (papers, reviewers,
   reports, Excel export) and `.../papers/[paperId]` (reviews, add/remove
   reviewer, decision). `requireOrganiserOf()` guards them.
+- **Conference requests and billing** (`lib/billing`, owner's choice of
+  "option 2", Oct 2026): an organiser requests a conference at
+  `/organiser/conferences/new`, giving the papers they expect. It is stored
+  `PENDING` (`Conference.status`), and an invoice for the package that fits
+  (`lib/billing/pricing.ts`: $10 / $25 / $50 / $100, demonstration prices) is
+  issued and emailed at once with the administrator's payment instructions
+  (an `AppSetting`, edited at `/admin/billing`). They pay outside the
+  platform; an administrator marks the invoice paid (records a `Payment`,
+  emails a receipt) and approves, which makes the conference `ACTIVE`, or
+  declines with a reason (the invoice is voided). Only `ACTIVE` conferences
+  take papers, appear to submitters or are matched. Invoices print cleanly
+  (`/organiser/invoices/[id]`, print styles in `globals.css`). Online payment
+  would replace only the "mark paid" step.
 - **Papers** (`lib/submissions`): fields are title, authors, contact email,
   institution, topic (conference list or Other), discipline (platform list or
   Other), type, abstract, file. Editable while `DRAFT` or `SUBMITTED`; locked
@@ -121,17 +136,17 @@ a browser test of the full flow, and admin management of the disciplines list
 
 ## Decisions already made — do not relitigate
 
-| Area              | Decision                                                                                                                                                                                |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Architecture      | Next.js full-stack, App Router; route handlers + server actions are the backend                                                                                                         |
-| Database          | Neon (prod) / Docker Postgres (dev), via Prisma + `@prisma/adapter-pg`                                                                                                                  |
-| Storage           | Cloudflare R2 (prod) / MinIO (dev), behind `lib/storage`                                                                                                                                |
-| Email             | Resend on a verified domain (prod) / Mailpit (dev), behind `lib/email`                                                                                                                  |
-| Auth              | Hand-rolled DB sessions: argon2id, httpOnly cookies, own guards. No Auth.js, no Clerk                                                                                                   |
-| Reviewer accounts | Reviewers sign up themselves (owner's decision, Oct 2026) or are invited; organisers and admins only by invitation                                                                      |
-| Anonymity         | Reviewers are always anonymous to submitters. Authors are hidden from reviewers when the conference is double-blind (`Conference.doubleBlind`), resolved only in `toReviewerPaperDTO()` |
-| Document viewing  | In-browser preview (PDF.js for PDF, Mammoth for .docx) plus download                                                                                                                    |
-| Purpose           | A real tool for real use — reliability over feature count                                                                                                                               |
+| Area             | Decision                                                                                                                                                                                |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Architecture     | Next.js full-stack, App Router; route handlers + server actions are the backend                                                                                                         |
+| Database         | Neon (prod) / Docker Postgres (dev), via Prisma + `@prisma/adapter-pg`                                                                                                                  |
+| Storage          | Cloudflare R2 (prod) / MinIO (dev), behind `lib/storage`                                                                                                                                |
+| Email            | Resend on a verified domain (prod) / Mailpit (dev), behind `lib/email`                                                                                                                  |
+| Auth             | Hand-rolled DB sessions: argon2id, httpOnly cookies, own guards. No Auth.js, no Clerk                                                                                                   |
+| Accounts         | Submitters, reviewers and organisers sign up themselves (owner's decisions, Oct 2026); organisers' conferences stay pending until an admin approves them. Admins only by invitation     |
+| Anonymity        | Reviewers are always anonymous to submitters. Authors are hidden from reviewers when the conference is double-blind (`Conference.doubleBlind`), resolved only in `toReviewerPaperDTO()` |
+| Document viewing | In-browser preview (PDF.js for PDF, Mammoth for .docx) plus download                                                                                                                    |
+| Purpose          | A real tool for real use — reliability over feature count                                                                                                                               |
 
 ## Environment facts that cost time to discover
 

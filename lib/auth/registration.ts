@@ -18,9 +18,11 @@ import { rateLimitKey, rateLimiter } from "@/lib/rate-limit";
  * what differs is the email that arrives, and only the owner of the inbox
  * sees that.
  *
- * The public chooses between two roles here, and only two: a submitter
- * (USER) or a reviewer. Organisers and administrators exist only through
- * lib/auth/invites.ts — the `accountType` type below is what keeps it so.
+ * The public chooses between three roles here, and only three: a submitter
+ * (USER), a reviewer, or an organiser. An organiser who signs up can only
+ * request conferences, which stay pending until an administrator approves
+ * them. Administrators exist only through lib/auth/invites.ts — the
+ * `accountType` type below is what keeps it so.
  */
 
 export const VERIFY_TTL_HOURS = 24;
@@ -54,7 +56,7 @@ async function sendVerificationEmail(user: { id: string; email: string; name: st
  * "check your inbox" message whatever happened here.
  */
 export async function startRegistration(input: {
-  accountType: "submitter" | "reviewer";
+  accountType: "submitter" | "reviewer" | "organiser";
   name: string;
   email: string;
   institution: string;
@@ -65,7 +67,12 @@ export async function startRegistration(input: {
   const email = normaliseEmail(input.email);
   const name = input.name.trim();
   const institution = input.institution.trim();
-  const role = input.accountType === "reviewer" ? "REVIEWER" : "USER";
+  const role =
+    input.accountType === "reviewer"
+      ? "REVIEWER"
+      : input.accountType === "organiser"
+        ? "ORGANISER"
+        : "USER";
   if (role === "REVIEWER" && !input.reviewer) return;
 
   const limit = await rateLimiter.consume(rateLimitKey("register:email", email), PER_EMAIL_RULE);

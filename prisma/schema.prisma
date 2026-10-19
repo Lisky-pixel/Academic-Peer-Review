@@ -49,6 +49,20 @@ enum TokenPurpose {
 /// The paper lifecycle. Transitions are defined in lib/workflow/transitions.ts
 /// and applied only by lib/workflow/state-machine.ts — never assign this field
 /// directly.
+/// Whether a conference is live. One requested by an organiser waits for an
+/// administrator's approval, normally after its invoice is paid.
+enum ConferenceStatus {
+  PENDING
+  ACTIVE
+  DECLINED
+}
+
+enum InvoiceStatus {
+  UNPAID
+  PAID
+  VOID
+}
+
 enum SubmissionStatus {
   DRAFT // being written; private to the submitter
   SUBMITTED // in, waiting for reviewers; the submitter may still edit it
@@ -110,6 +124,8 @@ enum NotificationType {
   REVIEWS_COMPLETE
   REVIEW_OVERDUE
   PAYMENT_RECEIPT
+  CONFERENCE_REQUESTED
+  CONFERENCE_DECIDED
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -144,18 +160,19 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  reviewerProfile     ReviewerProfile?
-  sessions            Session[]
-  tokens              Token[]
-  submissions         Submission[]          @relation("SubmissionAuthor")
-  decisionsMade       Submission[]          @relation("SubmissionDecider")
-  assignmentsToReview Assignment[]          @relation("AssignmentReviewer")
-  assignmentsMade     Assignment[]          @relation("AssignmentAssigner")
-  organising          ConferenceOrganiser[]
-  paymentsRecorded    Payment[]
-  uploadedFiles       StoredFile[]
-  notifications       Notification[]
-  activityLogs        ActivityLog[]
+  reviewerProfile      ReviewerProfile?
+  sessions             Session[]
+  tokens               Token[]
+  submissions          Submission[]          @relation("SubmissionAuthor")
+  decisionsMade        Submission[]          @relation("SubmissionDecider")
+  assignmentsToReview  Assignment[]          @relation("AssignmentReviewer")
+  assignmentsMade      Assignment[]          @relation("AssignmentAssigner")
+  organising           ConferenceOrganiser[]
+  conferencesRequested Conference[]          @relation("ConferenceRequester")
+  paymentsRecorded     Payment[]
+  uploadedFiles        StoredFile[]
+  notifications        Notification[]
+  activityLogs         ActivityLog[]
 
   @@index([role, status])
 }
@@ -245,7 +262,7 @@ model Conference {
 
   name        String
   /// Used in URLs and references, e.g. "acsa-2026".
-  slug        String  @unique
+  slug        String    @unique
   description String?
   venue       String?
   startsOn    DateTime?
@@ -273,14 +290,26 @@ model Conference {
   /// Set when reviewers were last matched automatically, after the call closed.
   matchedAt DateTime?
 
+  /// Live, waiting for approval, or declined. Only ACTIVE conferences take
+  /// papers or appear to submitters.
+  status         ConferenceStatus @default(ACTIVE)
+  /// How many papers the organiser expects; sets the package and the price.
+  expectedPapers Int?
+  requestedById  String?          @db.Uuid
+  requestedBy    User?            @relation("ConferenceRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  approvedAt     DateTime?
+  declineReason  String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   organisers  ConferenceOrganiser[]
   submissions Submission[]
   payments    Payment[]
+  invoices    Invoice[]
 
   @@index([submissionsCloseAt])
+  @@index([status])
 }
 
 model ConferenceOrganiser {
@@ -317,7 +346,41 @@ model Payment {
   receiptSentAt DateTime?
   createdAt     DateTime  @default(now())
 
+  /// The invoice this payment settled, if it was paid against one.
+  invoiceId String?  @unique @db.Uuid
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
   @@index([conferenceId])
+}
+
+/// What an organiser owes for a conference. Issued when they request one.
+model Invoice {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// e.g. "APR-INV-2026-0001".
+  number String @unique
+
+  conferenceId String     @db.Uuid
+  conference   Conference @relation(fields: [conferenceId], references: [id], onDelete: Restrict)
+
+  /// Who it is addressed to.
+  billedToName  String
+  billedToEmail String
+
+  description String
+  /// In the currency's minor unit (cents), so no rounding ever happens.
+  amountMinor Int
+  currency    String
+
+  status   InvoiceStatus @default(UNPAID)
+  issuedAt DateTime      @default(now())
+  dueAt    DateTime
+  paidAt   DateTime?
+
+  payment Payment?
+
+  @@index([conferenceId])
+  @@index([status])
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -338,19 +401,19 @@ model Submission {
   authorId String @db.Uuid
   author   User   @relation("SubmissionAuthor", fields: [authorId], references: [id], onDelete: Restrict)
 
-  title        String
+  title           String
   /// Every author, in order, as the submitter typed them.
-  authorNames  String
+  authorNames     String
   /// The main author's contact details.
-  contactEmail String
-  institution  String
-  topic        String
-  disciplineId String?     @db.Uuid
-  discipline   Discipline? @relation(fields: [disciplineId], references: [id], onDelete: Restrict)
+  contactEmail    String
+  institution     String
+  topic           String
+  disciplineId    String?     @db.Uuid
+  discipline      Discipline? @relation(fields: [disciplineId], references: [id], onDelete: Restrict)
   /// Typed when the paper's discipline is not on the list.
   disciplineOther String?
-  paperType    PaperType
-  abstract     String
+  paperType       PaperType
+  abstract        String
 
   /// When the submitter confirmed the paper is original and anonymised.
   declarationAt DateTime?
@@ -580,6 +643,11 @@ model ReferenceCounter {
 }
 
 model ReceiptCounter {
+  year      Int @id
+  lastValue Int @default(0)
+}
+
+model InvoiceCounter {
   year      Int @id
   lastValue Int @default(0)
 }

@@ -206,7 +206,7 @@ export function ChoiceGroup({
   state: FormState;
   initial?: string;
   options: Array<{ value: string; label: string; detail?: string }>;
-  columns?: 2 | 4;
+  columns?: 1 | 2 | 4;
   onChange?: (value: string) => void;
 }) {
   const errors = state.fieldErrors?.[name];
@@ -217,7 +217,7 @@ export function ChoiceGroup({
       <div
         className={cn(
           "grid grid-cols-[minmax(0,1fr)] gap-2",
-          columns === 4 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-2",
+          columns === 4 ? "sm:grid-cols-2 lg:grid-cols-4" : columns === 2 ? "sm:grid-cols-2" : "",
         )}
       >
         {options.map((option) => (

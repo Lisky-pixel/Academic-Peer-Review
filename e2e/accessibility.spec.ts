@@ -121,7 +121,7 @@ for (const scheme of ["light", "dark"] as const) {
 
     test("the organiser's pages have no detectable accessibility violations", async ({ page }) => {
       await login(page, "organiser@apr.local");
-      await checkPages(page, ["/organiser", "/organiser/reviewers"], {
+      await checkPages(page, ["/organiser", "/organiser/reviewers", "/organiser/conferences/new"], {
         from: "/organiser",
         link: "/organiser/conferences/",
       });
@@ -138,7 +138,15 @@ for (const scheme of ["light", "dark"] as const) {
       await login(page, "admin@apr.local");
       await checkPages(
         page,
-        ["/admin", "/admin/conferences/new", "/admin/users", "/admin/invites", "/admin/activity"],
+        [
+          "/admin",
+          "/admin/conferences/new",
+          "/admin/billing",
+          "/admin/email",
+          "/admin/users",
+          "/admin/invites",
+          "/admin/activity",
+        ],
         { from: "/admin", link: "/organiser/conferences/" },
       );
       const href = new URL(page.url()).pathname.replace(

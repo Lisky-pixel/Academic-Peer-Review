@@ -2,13 +2,17 @@ import { ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { approveConferenceAction } from "@/app/(admin)/admin/billing/actions";
+import { DeclineRequestForm, MarkPaidForm } from "@/app/(admin)/admin/billing/forms";
 import { removeOrganiserAction } from "@/app/(admin)/admin/conferences/actions";
-import { ConferenceForm, OrganiserForms, PaymentForm } from "@/app/(admin)/admin/conferences/forms";
+import { ConferenceForm, OrganiserForms, PaymentForm } from "@/components/conference-forms";
 import { BackLink } from "@/components/back-link";
 import { FormMessage } from "@/components/form";
 import { RoleArea } from "@/components/role-area";
+import { StatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
 import { requireRole } from "@/lib/auth/guards";
+import { findConferenceInvoices } from "@/lib/billing";
 import { findConference, findOrganiserAccounts } from "@/lib/conferences";
 import { dateInputValue, formatMoney } from "@/lib/conferences/schema";
 import { toConferenceDetailDTO } from "@/lib/dto/conference";
@@ -25,7 +29,11 @@ export default async function ConferenceSettingsPage({
   if (!isUuid(id)) notFound();
   const { created } = await searchParams;
 
-  const [record, accounts] = await Promise.all([findConference(id), findOrganiserAccounts()]);
+  const [record, accounts, invoices] = await Promise.all([
+    findConference(id),
+    findOrganiserAccounts(),
+    findConferenceInvoices(id),
+  ]);
   if (!record) notFound();
   const conference = toConferenceDetailDTO(record);
   const attached = new Set(conference.organisers.map((person) => person.id));
@@ -48,6 +56,78 @@ export default async function ConferenceSettingsPage({
         </Button>
       }
     >
+      {conference.status !== "ACTIVE" && (
+        <section aria-labelledby="request" className="glass space-y-5 rounded-3xl p-6 sm:p-8">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 id="request" className="font-heading text-xl font-medium">
+              Conference request
+            </h2>
+            <StatusPill tone={conference.status === "PENDING" ? "warning" : "muted"}>
+              {conference.status === "PENDING" ? "Waiting for approval" : "Declined"}
+            </StatusPill>
+          </div>
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            Requested by {conference.organisers.map((person) => person.name).join(", ") || "—"}
+            {conference.packageName ? ` · ${conference.packageName} package` : ""}
+            {conference.submissionLimit ? ` · up to ${conference.submissionLimit} papers` : ""}
+            {conference.declineReason ? ` · declined: ${conference.declineReason}` : ""}
+          </p>
+
+          {invoices.map((invoice) => (
+            <div key={invoice.id} className="border-border space-y-4 rounded-2xl border p-4 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                <Link
+                  href={`/organiser/invoices/${invoice.id}`}
+                  className="text-mark font-mono underline-offset-4 hover:underline"
+                >
+                  {invoice.number}
+                </Link>
+                <span className="font-medium tabular-nums">{invoice.amount}</span>
+                <StatusPill
+                  tone={
+                    invoice.status === "PAID"
+                      ? "success"
+                      : invoice.status === "UNPAID"
+                        ? "warning"
+                        : "muted"
+                  }
+                >
+                  {invoice.status === "PAID"
+                    ? `Paid ${formatDate(invoice.paidAt!)}`
+                    : invoice.status === "UNPAID"
+                      ? `Unpaid, due ${formatDate(invoice.dueAt)}`
+                      : "Cancelled"}
+                </StatusPill>
+              </div>
+              {invoice.status === "UNPAID" && conference.status === "PENDING" && (
+                <MarkPaidForm
+                  invoiceId={invoice.id}
+                  conferenceId={id}
+                  today={dateInputValue(new Date())}
+                />
+              )}
+            </div>
+          ))}
+
+          {conference.status === "PENDING" && (
+            <div className="border-border flex flex-wrap items-center gap-x-6 gap-y-4 border-t pt-5">
+              <form action={approveConferenceAction}>
+                <input type="hidden" name="conferenceId" value={id} />
+                <Button type="submit" size="lg" className="h-10 px-4 text-sm">
+                  Approve and open the call
+                </Button>
+              </form>
+              <p className="text-muted-foreground min-w-0 flex-1 basis-60 text-sm">
+                {invoices.some((invoice) => invoice.status === "UNPAID")
+                  ? "The invoice is not marked paid yet. You can still approve, for example for a free trial."
+                  : "Paid. Approving opens the call for papers and emails the organiser."}
+              </p>
+              <DeclineRequestForm conferenceId={id} />
+            </div>
+          )}
+        </section>
+      )}
+
       {created && (
         <FormMessage tone="success">
           Conference created. Add its organisers below; it opens for papers on{" "}

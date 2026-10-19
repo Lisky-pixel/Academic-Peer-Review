@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ConferenceForm } from "@/app/(admin)/admin/conferences/forms";
+import { ConferenceForm } from "@/components/conference-forms";
 import { BackLink } from "@/components/back-link";
 import { RoleArea } from "@/components/role-area";
 import { requireRole } from "@/lib/auth/guards";

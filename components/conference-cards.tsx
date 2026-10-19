@@ -10,14 +10,14 @@ export function ConferenceCards({
   hrefOf,
 }: {
   conferences: ConferenceListDTO[];
-  hrefOf: (id: string) => string;
+  hrefOf: (conference: ConferenceListDTO) => string;
 }) {
   return (
     <ul className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-2">
       {conferences.map((conference) => (
         <li key={conference.id}>
           <Link
-            href={hrefOf(conference.id)}
+            href={hrefOf(conference)}
             data-glow
             className="glass focus-visible:ring-ring/40 flex h-full flex-col gap-4 rounded-2xl p-5 transition-transform duration-200 outline-none hover:-translate-y-0.5 focus-visible:ring-3 motion-reduce:transition-none motion-reduce:hover:translate-y-0 sm:p-6"
           >
@@ -45,9 +45,15 @@ export function ConferenceCards({
               </span>
             </span>
             <span className="mt-auto">
-              <StatusPill tone={conference.phase === "open" ? "success" : "progress"}>
-                {PHASE_LABEL[conference.phase]}
-              </StatusPill>
+              {conference.status === "PENDING" ? (
+                <StatusPill tone="warning">Waiting for approval</StatusPill>
+              ) : conference.status === "DECLINED" ? (
+                <StatusPill tone="muted">Not approved</StatusPill>
+              ) : (
+                <StatusPill tone={conference.phase === "open" ? "success" : "progress"}>
+                  {PHASE_LABEL[conference.phase]}
+                </StatusPill>
+              )}
             </span>
           </Link>
         </li>

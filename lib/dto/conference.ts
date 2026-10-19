@@ -6,6 +6,7 @@ import type {
 } from "@/lib/conferences";
 import type {
   AssignmentStatus,
+  ConferenceStatus,
   PaperType,
   SubmissionFormat,
   SubmissionStatus,
@@ -47,6 +48,9 @@ export type ConferenceListDTO = {
   closesAt: string;
   reviewDeadline: string;
   phase: ConferencePhase;
+  /** Live, waiting for approval, or declined. */
+  status: ConferenceStatus;
+  declineReason: string | null;
   packageName: string | null;
   submissionLimit: number | null;
   papers: number;
@@ -67,6 +71,8 @@ export function toConferenceListDTO(
     closesAt: record.submissionsCloseAt.toISOString(),
     reviewDeadline: record.reviewDeadline.toISOString(),
     phase: phaseOf(record, now),
+    status: record.status,
+    declineReason: record.declineReason,
     packageName: record.packageName,
     submissionLimit: record.submissionLimit,
     papers: record._count.submissions,
