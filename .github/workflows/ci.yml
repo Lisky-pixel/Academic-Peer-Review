@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck, lint and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      # The database tests (*.db.test.ts) run against a real Postgres, with
+      # the same credentials as the local docker-compose stack.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: reviewflow
+          POSTGRES_PASSWORD: reviewflow
+          POSTGRES_DB: reviewflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U reviewflow -d reviewflow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The example values point at the services above; tests read .env.
+      - run: cp .env.example .env
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Apply database migrations
+        run: pnpm db:deploy
+
+      - name: Generate route types
+        run: pnpm exec next typegen
+
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm test

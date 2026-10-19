@@ -1,12 +1,64 @@
 # Academic Peer Review
 
+[![CI](https://github.com/Lisky-pixel/Academic-Peer-Review/actions/workflows/ci.yml/badge.svg)](https://github.com/Lisky-pixel/Academic-Peer-Review/actions/workflows/ci.yml)
+![Next.js 16](https://img.shields.io/badge/Next.js-16-000?logo=nextdotjs)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Prisma_7-336791?logo=postgresql&logoColor=white)
+
 Peer review for academic conferences. Organisers open a call for papers,
 authors submit, papers are matched automatically to reviewers in the right
-discipline, reviewers score and comment, and organisers decide.
+discipline, reviewers score and comment, and organisers decide, with every
+author hearing back.
 
-**Reviewers are anonymous to authors**, everywhere: in the interface, in emails,
-and inside the files authors download. Conferences can also hide authors from
-reviewers (double-blind, the default).
+![The organiser's view of a paper, with three reviews and the decision panel](docs/screenshots/organiser-decision.png)
+
+## Features
+
+**For organisers**
+
+- A dashboard per conference: papers by stage, filters and search, reviewer
+  progress, reports by topic, discipline and type, and the acceptance rate.
+- Automatic reviewer matching when the call closes, or on demand.
+- Reviews side by side with scores and recommendations; accept or reject with
+  a message to the authors.
+- Excel exports of every paper and every review.
+
+**For authors**
+
+- Submit to any open call: title, authors, institution, topic, discipline,
+  paper type, abstract and the full paper (PDF or Word).
+- Edit until reviewers have the paper; follow its progress.
+- Read every review and download marked-up copies once a decision is made.
+
+**For reviewers**
+
+- Sign up with disciplines, rank and experience; add a CV.
+- Papers arrive by email, matched to their field and never from their own
+  institution. Decline, or declare a conflict of interest, and the paper goes
+  to someone else at once.
+- Score from 1 to 5, recommend or not, comment, and return a marked-up copy.
+- Reminders 7, 3 and 1 days before a review is due.
+
+**Throughout**
+
+- Reviewers are anonymous to authors in the interface, in emails and inside
+  downloaded files; conferences can also hide authors from reviewers.
+- When reviewers disagree, a tie-breaker reviewer is added automatically.
+- Light and dark themes, built for phones as well as laptops, and checked for
+  accessibility (WCAG 2.1 AA) on every page.
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/organiser-conference.png" alt="A conference dashboard with papers by stage"></td>
+    <td><img src="docs/screenshots/reviewer.png" alt="A reviewer's view of a paper, with the author hidden"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/submitter-dark.png" alt="An author reading their decision and reviews, in the dark theme"></td>
+    <td><img src="docs/screenshots/home.png" alt="The landing page"></td>
+  </tr>
+</table>
+
+## How it works
 
 ```
 Author submits ──▶ call closes ──▶ matched to reviewers by discipline
@@ -189,3 +241,7 @@ accessibility in both themes and the Content Security Policy on every page.
 
 Working notes for whoever, or whatever, picks the code up next are in
 [CLAUDE.md](CLAUDE.md).
+
+## License
+
+Proprietary. All rights reserved.

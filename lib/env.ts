@@ -19,10 +19,21 @@ const booleanish = z
   .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
   .transform((v) => v === true || v === "true" || v === "1");
 
+/**
+ * A value pasted into a hosting dashboard often keeps the quotes it had in a
+ * .env file, and those quotes are then sent as part of it: an EMAIL_FROM of
+ * "Name <a@b.com>" with the quotes is rejected by Resend. Strip them.
+ */
+const unquoted = z
+  .string()
+  .trim()
+  .transform((value) => value.replace(/^(["'])(.*)\1$/, "$2").trim());
+
 const schema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-    APP_URL: z.url(),
+    // Without a trailing slash, so links are built as `${APP_URL}/path`.
+    APP_URL: unquoted.pipe(z.url()).transform((value) => value.replace(/\/+$/, "")),
     APP_NAME: z.string().min(1).default("Academic Peer Review"),
 
     DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
@@ -45,15 +56,14 @@ const schema = z
       .default(20 * 1024 * 1024),
 
     EMAIL_PROVIDER: z.enum(["smtp", "resend"]).default("smtp"),
-    EMAIL_FROM: z.string().min(1),
+    EMAIL_FROM: unquoted.pipe(z.string().min(1)),
     EMAIL_REPLY_TO: z.string().optional(),
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.coerce.number().int().positive().optional(),
     SMTP_SECURE: booleanish.default(false),
-    RESEND_API_KEY: z.string().optional(),
+    RESEND_API_KEY: unquoted.optional(),
 
     CRON_SECRET: z.string().min(16, "CRON_SECRET must be at least 16 characters"),
-    DEADLINE_REMINDER_LEAD_DAYS: z.coerce.number().int().positive().default(2),
   })
   .superRefine((env, ctx) => {
     // Each provider needs its own credentials. Checking here, rather than at

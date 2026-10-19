@@ -22,6 +22,7 @@ const NAV = {
     { href: "/admin", label: "Conferences" },
     { href: "/admin/users", label: "People" },
     { href: "/admin/invites", label: "Invitations" },
+    { href: "/admin/email", label: "Email" },
     { href: "/admin/activity", label: "Activity" },
   ],
 } as const satisfies Record<Role, readonly NavItem[]>;

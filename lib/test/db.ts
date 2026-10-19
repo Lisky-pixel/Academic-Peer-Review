@@ -11,7 +11,7 @@ import { db } from "@/lib/db";
  * they create, under an email domain nothing else uses, and remove them after.
  */
 
-const TEST_EMAIL_DOMAIN = "@reviewflow-test.invalid";
+const TEST_EMAIL_DOMAIN = "@apr-test.invalid";
 
 /**
  * Identifies the accounts made by this test file. Vitest runs files in

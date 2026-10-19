@@ -75,6 +75,14 @@ a browser test of the full flow, and admin management of the disciplines list
 - **Email**: workflow notices go through the outbox (`queueNotices`); wording
   is all in `lib/notifications/messages.ts`. Addresses ending `.invalid` are
   never sent through Resend: the demo accounts use them.
+- **Email diagnostics** (`/admin/email`): every email with its status and the
+  provider's error, plain-language advice for common Resend errors, and a test
+  send. Account emails are sent after the response, so a failure shows only
+  here and in the Vercel logs. `lib/env.ts` strips quotes pasted around
+  `EMAIL_FROM`, `APP_URL` and `RESEND_API_KEY`, and a trailing slash from
+  `APP_URL`.
+- CI (`.github/workflows/ci.yml`) runs typecheck, lint, format and every
+  test against a Postgres service on each push to `main`.
 - **Help** (`/help`): questions and a contact form that emails every
   administrator.
 - **Seed**: `pnpm db:seed` (dev: disciplines, accounts, two demo conferences
@@ -160,7 +168,7 @@ enable` needs admin to write into `Program Files`.
   and fails with "Unknown field" on the new columns.
 - **A test run that fails in clean-up leaves accounts behind**, including
   active administrators, and every submission then emails all of them. If the
-  dev database feels slow or mail lags, look for `@reviewflow-test.invalid`
+  dev database feels slow or mail lags, look for `@apr-test.invalid`
   users. They are removed automatically once an hour old.
 - **Test files run one at a time** (`fileParallelism: false`), about 45s in
   all. In parallel, one file's cleanup deleted an admin while another file's
